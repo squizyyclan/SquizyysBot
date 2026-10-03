@@ -13,9 +13,16 @@ ROLE_SPECS = {
     "member": ("Mitglied", 0x2ECC71, False, {}),
     "recruit": ("Rekrut", 0x95A5A6, False, {}),
     "borrower": ("Leiher", 0x3498DB, False, {}),
+    "farmer": ("Farmer", 0x8BC34A, False, {}),
+    "builder": ("Builder", 0x9B59B6, False, {}),
+    "miner": ("Miner", 0x795548, False, {}),
 }
 # Reihenfolge von oben nach unten (für die Rollen-Hierarchie)
-ROLE_ORDER = ["leader", "officer", "lender", "member", "recruit", "borrower"]
+ROLE_ORDER = ["leader", "officer", "lender", "member", "recruit", "borrower", "farmer", "builder", "miner"]
+
+# True = man kann nur EINE der Rollen Farmer/Builder/Miner haben (Klick auf eine andere wechselt)
+# False = man kann mehrere gleichzeitig haben
+SKILL_ROLES_EXCLUSIVE = True
 
 # view  = Rollen, die den Kanal sehen ("everyone" = alle)
 # write = Rollen, die schreiben (Text) bzw. sprechen (Voice) dürfen
