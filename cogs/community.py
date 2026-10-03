@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 import db
+from config import SKILL_ROLES_EXCLUSIVE
 from utils import get_ch, get_role, is_staff, modlog, staff_only
 
 
@@ -88,6 +89,40 @@ class TicketCloseView(discord.ui.View):
         await channel.delete(reason="Ticket geschlossen")
 
 
+# ---------------------------------------------------------------- Spezialisierungs-Rollen
+
+SKILL_ROLES = {"farmer": ("Farmer", "🌾"), "builder": ("Builder", "🏗️"), "miner": ("Miner", "⛏️")}
+
+
+class SkillRoleView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        for key, (label, emoji) in SKILL_ROLES.items():
+            button = discord.ui.Button(label=label, emoji=emoji, style=discord.ButtonStyle.secondary,
+                                       custom_id=f"clan:skill:{key}")
+            button.callback = self.make_callback(key)
+            self.add_item(button)
+
+    def make_callback(self, key):
+        async def callback(interaction: discord.Interaction):
+            guild, member = interaction.guild, interaction.user
+            role = await get_role(guild, key)
+            if not role:
+                return await interaction.response.send_message(
+                    "Die Rolle fehlt noch – ein Admin muss /setup ausführen.", ephemeral=True)
+            if role in member.roles:
+                await member.remove_roles(role)
+                return await interaction.response.send_message(f"Du bist kein {role.name} mehr.", ephemeral=True)
+            if SKILL_ROLES_EXCLUSIVE:
+                for other_key in SKILL_ROLES:
+                    other = await get_role(guild, other_key)
+                    if other_key != key and other and other in member.roles:
+                        await member.remove_roles(other)
+            await member.add_roles(role)
+            await interaction.response.send_message(f"Du bist jetzt **{role.name}**! {SKILL_ROLES[key][1]}", ephemeral=True)
+        return callback
+
+
 # ---------------------------------------------------------------- Cog
 
 def can_act(actor: discord.Member, target: discord.Member):
@@ -102,6 +137,7 @@ class Community(commands.Cog):
     async def cog_load(self):
         self.bot.add_view(TicketPanelView())
         self.bot.add_view(TicketCloseView())
+        self.bot.add_view(SkillRoleView())
 
     # ----- Willkommen & Auto-Rolle
 
