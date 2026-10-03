@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 
 import db
-from cogs.community import TicketPanelView
+from cogs.community import SkillRoleView, TicketPanelView
 from cogs.loans import BorrowerRoleView, refresh_catalog
 from config import LAYOUT, ROLE_ORDER, ROLE_SPECS
 from utils import ensure_message
@@ -181,6 +181,12 @@ class SetupCog(commands.Cog, name="Setup"):
                                            description="Möchtest du Items vom Clan leihen? Klick auf den Button, "
                                                        "dann schaltet sich das **Leihhaus** für dich frei.",
                                            colour=blue), BorrowerRoleView())
+        await ensure_message(guild, ch["roles"], "skills",
+                             discord.Embed(title="⚒️ Deine Spezialisierung",
+                                           description="Was machst du im Clan am liebsten? Wähle **Farmer**, **Builder** "
+                                                       "oder **Miner**. Ein Klick auf eine andere Rolle wechselt, "
+                                                       "ein erneuter Klick gibt sie ab.", colour=discord.Colour.green()),
+                             SkillRoleView())
         await ensure_message(guild, ch["tickets"], "tickets",
                              discord.Embed(title="🎫 Bewerbung & Support",
                                            description="Du willst in den Clan oder brauchst Hilfe? "
@@ -195,5 +201,7 @@ class SetupCog(commands.Cog, name="Setup"):
         await refresh_catalog(guild)
 
 
+async def setup(bot):
+    await bot.add_cog(SetupCog(bot))
 async def setup(bot):
     await bot.add_cog(SetupCog(bot))
