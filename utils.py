@@ -5,17 +5,23 @@ import db
 from config import ROLE_SPECS
  
  
+def _norm(name):
+    return " ".join(name.replace("\ufe0f", "").split()).casefold()
+ 
+ 
 def _key(name):
-    """Vergleichsschlüssel: ohne Emoji-Zusatz, nur Text hinter '|', klein geschrieben."""
-    return " ".join(name.replace("\ufe0f", "").split("|")[-1].split()).casefold()
+    """Schlüssel nur aus dem Text hinter '|' (ohne Emoji-Präfix, '-' wie Leerzeichen)."""
+    text = name.replace("\ufe0f", "").split("|")[-1].replace("-", " ").replace("_", " ")
+    return " ".join(text.split()).casefold()
  
  
-def find_role(guild, name):
-    """Findet eine vorhandene Rolle, auch bei kleinen Abweichungen (Leerzeichen, Emoji-Präfix)."""
-    for role in guild.roles:
-        if not role.is_default() and not role.managed and _key(role.name) == _key(name):
-            return role
-    return None
+def find_role(guild, name, fuzzy=True):
+    """Findet eine Rolle: zuerst exakt (gleicher Name), sonst - falls erlaubt - über den Text hinter '|'."""
+    roles = [r for r in guild.roles if not r.is_default() and not r.managed]
+    exact = next((r for r in roles if _norm(r.name) == _norm(name)), None)
+    if exact or not fuzzy:
+        return exact
+    return next((r for r in reversed(roles) if _key(r.name) == _key(name)), None)
  
  
 async def get_ch(guild, key):
@@ -24,10 +30,13 @@ async def get_ch(guild, key):
  
  
 async def get_role(guild, key):
-    rid = await db.get_setting(guild.id, f"role_{key}")
-    role = guild.get_role(int(rid)) if rid else None
-    if role is None and key in ROLE_SPECS:  # Fallback: Rolle über ihren Namen finden
-        role = find_role(guild, ROLE_SPECS[key][0])
+    spec = ROLE_SPECS.get(key)
+    role = find_role(guild, spec[0], fuzzy=False) if spec else None  # exakter Rollenname hat Vorrang
+    if role is None:
+        rid = await db.get_setting(guild.id, f"role_{key}")
+        role = guild.get_role(int(rid)) if rid else None
+    if role is None and spec:
+        role = find_role(guild, spec[0])
     return role
  
  
@@ -70,4 +79,3 @@ async def modlog(guild, text):
     ch = await get_ch(guild, "modlog")
     if ch:
         await ch.send(text, allowed_mentions=discord.AllowedMentions.none())
- 
