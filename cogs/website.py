@@ -5,12 +5,13 @@ import hmac
 import html
 import json
 import os
+import re
 import secrets
 import time
 from urllib.parse import urlencode
  
 import discord
-from aiohttp import ClientSession, web
+from aiohttp import ClientSession, ClientTimeout, web
 from discord.ext import commands
  
 import db
@@ -121,6 +122,40 @@ class AppButton(discord.ui.DynamicItem[discord.ui.Button], template=r"app:(?P<ac
         await interaction.followup.send(note, ephemeral=True)
  
  
+# Adressen der OPSUCHT-API (per Variable änderbar, falls sie anders lauten)
+OPS = {
+    "shards": os.getenv("OPS_SHARDS_URL", "https://api.opsucht.net/merchant/rates"),
+    "markt": os.getenv("OPS_MARKT_URL", "https://api.opsucht.net/market/prices"),
+    "ah": os.getenv("OPS_AH_URL", "https://api.opsucht.net/auction/active"),
+}
+ops_cache = {}
+ 
+ 
+async def ops_json(key):
+    stamp, data = ops_cache.get(key, (0, None))
+    if data is not None and time.time() - stamp < 60:
+        return data
+    async with ClientSession(timeout=ClientTimeout(total=15), headers={"User-Agent": "ClanBot"}) as http:
+        async with http.get(OPS[key]) as r:
+            r.raise_for_status()
+            data = await r.json(content_type=None)
+    ops_cache[key] = (time.time(), data)
+    return data
+ 
+ 
+def shard_name(source):
+    """Macht aus 'diamond_block' oder einem langen Paper-Item-String einen lesbaren Namen."""
+    name = source.replace("minecraft:", "").replace("_", " ").title()
+    if "[" in source:
+        m = re.search(r'item_name=\{extra: \[\{[^}]*?text: "([^"]+)"', source) or re.search(r'text: "([^"]+)"', source)
+        name = m.group(1) if m else name.split("[")[0]
+    try:  # kaputte Umlaute (Ã¤ -> ä) reparieren
+        name = name.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+    return name
+ 
+ 
 def play_status(member):
     """Best-Effort über Discord-Aktivitäten (OPSUCHT selbst bietet keine öffentliche Online-Abfrage)."""
     if not PRESENCE:
@@ -161,7 +196,8 @@ class Website(commands.Cog):
                         web.get("/app.js", self.script), web.post("/api/regeln", self.save_rules),
                         web.post("/api/item", self.edit_item),
                         web.get("/api/konto", self.konto), web.post("/api/konto", self.save_konto),
-                        web.post("/api/ign", self.save_ign)])
+                        web.post("/api/ign", self.save_ign),
+                        web.get("/api/ops/{key}", self.ops)])
         try:
             self.runner = web.AppRunner(app)
             await self.runner.setup()
@@ -222,6 +258,22 @@ class Website(commands.Cog):
         await ensure_message(guild, channel, "rules", discord.Embed(
             title="📜 Clan-Regeln", description=text or "–", colour=discord.Colour.red()))
         return web.json_response({"message": "✅ Regeln gespeichert."})
+ 
+    async def ops(self, request):
+        key = request.match_info["key"]
+        if key not in OPS:
+            return fail("Unbekannt.", 404)
+        try:
+            data = await ops_json(key)
+        except Exception as error:
+            return fail(f"OPSUCHT-Schnittstelle nicht erreichbar ({OPS[key]}): {error}", 502)
+        if key == "shards" and isinstance(data, list):
+            names = {"opshards": "OP-Shards", "redcoins": "Redcoins"}
+            data = [{"Item": shard_name(str(d.get("source", ""))), "Ziel": names.get(d.get("target"), d.get("target")),
+                     "Basis": d.get("base"), "Kurs": d.get("exchangeRate"),
+                     "Abweichung %": round((d["exchangeRate"] / d["base"] - 1) * 100, 1)
+                     if d.get("base") and d.get("exchangeRate") is not None else None} for d in data]
+        return web.json_response(data)
  
     async def save_ign(self, request):
         guild, member = await self.member_of(request)
