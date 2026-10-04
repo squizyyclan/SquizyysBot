@@ -1,0 +1,72 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>__NAME__ __TAG__</title><style>
+:root{--o:#f7931a;--bg:#090b0f;--c:rgba(255,255,255,.04);--l:rgba(255,255,255,.1);--m:#8a93a3}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:#eef1f6;font:16px/1.6 system-ui,sans-serif}a{color:inherit;text-decoration:none}
+nav{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;padding:12px 24px;background:rgba(9,11,15,.88);backdrop-filter:blur(8px);border-bottom:1px solid var(--l);flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;margin-right:18px}.logo i{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--o);font-style:normal}.logo span{color:var(--o)}
+nav a.l{padding:7px 14px;border-radius:8px;color:var(--m);font-size:.95rem;border:1px solid transparent}nav a.l.on{background:var(--c);color:#fff;border-color:var(--l)}
+.btn{display:inline-block;padding:11px 22px;border-radius:8px;background:var(--o);color:#1a1100;border:0;cursor:pointer;font:inherit;font-weight:700}.btn.g{background:var(--c);color:#fff;border:1px solid var(--l)}
+.hero{min-height:82vh;display:grid;place-content:center;text-align:center;padding:40px 20px;background:radial-gradient(ellipse at 50% 15%,rgba(247,147,26,.2),transparent 60%)}
+h1{font-size:clamp(2.4rem,7vw,4.4rem);line-height:1.1;margin:0 0 18px}h1 span,.st b{color:var(--o)}
+.hero p{max-width:620px;margin:0 auto 28px;color:var(--m);font-size:1.15rem}
+.st{display:flex;gap:44px;justify-content:center;margin-top:56px;flex-wrap:wrap}.st b{display:block;font-size:2rem}.st small{color:var(--m)}
+main section:not(.hero){max-width:980px;margin:auto;padding:48px 20px}h2{font-size:2rem;margin:0 0 20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:24px}
+.card{background:var(--c);border:1px solid var(--l);border-radius:12px;padding:16px}.card small{color:var(--m);display:block}
+.bar{height:6px;border-radius:3px;background:var(--l);margin:10px 0}.bar i{display:block;height:100%;border-radius:3px;background:var(--o)}
+.mem{display:flex;align-items:center;gap:10px}.mem img{width:36px;height:36px;border-radius:50%}
+ol{padding-left:22px}li{margin:10px 0}
+input,select,textarea{width:100%;font:inherit;color:inherit;background:var(--c);border:1px solid var(--l);border-radius:8px;padding:10px}
+form{display:grid;gap:12px;max-width:560px}label{display:grid;gap:4px;color:var(--m);font-size:.9rem}
+dialog{background:#12151b;color:#fff;border:1px solid var(--l);border-radius:12px}.hp{position:absolute;left:-9999px}
+</style></head><body>
+<nav><a class="logo" href="#home"><i>⛏️</i>__NAME__ <span>__TAG__</span></a>
+<a class="l" data-p="home" href="#home">Home</a><a class="l" data-p="regeln" href="#regeln">Regeln</a><a class="l" data-p="mitglieder" href="#mitglieder">Mitglieder</a><a class="l" data-p="verleih" href="#verleih">Verleih</a><a class="l" data-p="bewerben" href="#bewerben">Bewerben</a>
+<span id="auth" style="margin-left:auto"></span></nav>
+<main>
+<section id="home" class="hero"><div><h1>Willkommen bei<br><span>__NAME__ __TAG__</span></h1><p>__TEXT__</p>
+<a class="btn" href="#verleih">Zum Verleih →</a> <a class="btn g" href="#bewerben">Bewerben</a>
+<div class="st"><div><b id="s1">–</b><small>Clan-Mitglieder</small></div><div><b id="s2">–</b><small>Community-Mitglieder</small></div><div><b>24/7</b><small>Aktiv</small></div><div><b>__YEAR__</b><small>Gegründet</small></div></div></div></section>
+<section id="regeln"><h2>📜 Regeln</h2><ol id="rules"></ol></section>
+<section id="mitglieder"><h2>👥 Mitglieder</h2><div id="mem"></div></section>
+<section id="verleih"><h2>📦 Verleih</h2><p id="hint" style="color:var(--m)"></p><input id="q" placeholder="Item suchen …" style="margin-bottom:14px"><div id="items" class="grid"></div></section>
+<section id="bewerben"><h2>📝 Bewerben</h2><form id="f">
+<label>Minecraft-Name<input name="minecraft" maxlength="32" required></label>
+<label>Discord-Name<input name="discord" maxlength="40" required></label>
+<label>Wunschrolle<select name="rolle"><option>Farmer</option><option>Builder</option><option>Miner</option><option>Egal</option></select></label>
+<label>Erfahrung<textarea name="erfahrung" rows="3" maxlength="800"></textarea></label>
+<label>Warum möchtest du zu uns?<textarea name="motivation" rows="4" maxlength="800" required></textarea></label>
+<input class="hp" name="website" tabindex="-1" autocomplete="off"><button class="btn">Bewerbung absenden</button><div id="msg"></div></form></section>
+</main>
+<dialog id="dlg"><form id="lf"><b id="dn"></b><label>Menge<input name="menge" type="number" min="1" value="1"></label><label>Tage<input name="tage" type="number" min="1" max="60" value="7"></label><div id="lm"></div>
+<button class="btn">Anfragen</button><button type="button" class="btn g" onclick="document.querySelector('#dlg').close()">Abbrechen</button></form></dialog>
+<script>
+const $=s=>document.querySelector(s),mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const api=async(u,o)=>{const r=await fetch(u,o);return[r.ok,await r.json()]},post=b=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+let items=[],me=null;
+function route(){const p=location.hash.slice(1)||'home';document.querySelectorAll('main>section').forEach(s=>s.hidden=s.id!==p);document.querySelectorAll('nav a.l').forEach(a=>a.classList.toggle('on',a.dataset.p===p));scrollTo(0,0)}
+addEventListener('hashchange',route);route();
+function draw(){const q=$('#q').value.toLowerCase(),box=$('#items');box.replaceChildren();const l=items.filter(i=>i.name.toLowerCase().includes(q));
+if(!l.length)return box.append(mk('p','','Keine Items gefunden.'));
+for(const i of l){const c=mk('div','card'),b=mk('div','bar'),p=mk('i');c.append(mk('b','',i.name));p.style.width=(i.stock?100*i.available/i.stock:0)+'%';b.append(p);
+c.append(b,mk('small','',(i.available>0?'🟢 ':'🔴 ')+i.available+' / '+i.stock+' verfügbar'));if(i.description)c.append(mk('small','',i.description));
+if(me&&i.available>0){const x=mk('button','btn','Leihen');x.style.marginTop='10px';x.onclick=()=>{$('#dn').textContent=i.name;$('#lm').textContent='';$('#dlg').showModal()};c.append(x)}box.append(c)}}
+async function load(){const[ok,d]=await api('/api/items');if(ok){items=d;draw()}}
+async function init(){
+const[,m]=await api('/api/me');me=m.user;const a=$('#auth');
+if(me){const i=mk('img');i.src=me.avatar||'';i.width=28;i.style.cssText='border-radius:50%;vertical-align:middle;margin-right:8px';const o=mk('a','','Abmelden');o.href='/logout';o.style.color='var(--o)';a.append(i,me.name+' · ',o);$('#f [name=discord]').value=me.username}
+else if(m.login){const b=mk('a','btn','Anmelden');b.href='/login';a.append(b)}
+$('#hint').textContent=me?'Wähle ein Item und klicke auf „Leihen“.':'Melde dich an, um Items zu leihen.';
+const[,s]=await api('/api/stats');$('#s1').textContent=s.clan;$('#s2').textContent=s.community;
+const[,r]=await api('/api/rules');for(const t of r.rules)$('#rules').append(mk('li','',t.replace(/^\S+\s/,'')));
+if(!r.rules.length)$('#rules').append(mk('li','','Noch keine Regeln eingetragen.'));
+const[,g]=await api('/api/members'),box=$('#mem');
+for(const[k,list]of Object.entries(g)){if(!list.length)continue;box.append(mk('h3','',k+' ('+list.length+')'));const gr=mk('div','grid');
+for(const u of list){const c=mk('div','card mem'),i=mk('img');i.src=u.avatar;c.append(i,mk('span','',u.name));gr.append(c)}box.append(gr)}
+load();setInterval(load,30000)}
+$('#q').oninput=draw;init();
+$('#lf').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));f.item=$('#dn').textContent;
+const[ok,j]=await api('/api/leihen',post(f));$('#lm').textContent=j.message;if(ok)setTimeout(()=>{$('#dlg').close();load()},1500)};
+$('#f').onsubmit=async e=>{e.preventDefault();const b=$('#f button'),m=$('#msg');b.disabled=true;m.textContent='Sende …';
+try{const[ok,j]=await api('/api/bewerbung',post(Object.fromEntries(new FormData(e.target))));m.textContent=j.message;if(ok)e.target.reset()}catch(x){m.textContent='Fehler beim Senden.'}b.disabled=false};
+</script></body></html>
