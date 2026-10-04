@@ -29,7 +29,27 @@ CREATE TABLE IF NOT EXISTS temp_voice (
 """
 
 
+def prepare_path():
+    """Sorgt dafür, dass die Datenbank geschrieben werden kann. Sonst Fallback auf eine lokale Datei."""
+    global DB_PATH
+    folder = os.path.dirname(DB_PATH)
+    try:
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        test = os.path.join(folder or ".", ".write_test")
+        with open(test, "w") as f:
+            f.write("ok")
+        os.remove(test)
+    except OSError as error:
+        print(f"WARNUNG: {folder or '.'} ist nicht beschreibbar ({error}). "
+              "Nutze lokale Datei clanbot.db - Daten gehen beim nächsten Deploy verloren! "
+              "Hänge in Railway ein Volume an (Mount-Pfad passend zu DB_PATH).")
+        DB_PATH = "clanbot.db"
+    print(f"Datenbank: {os.path.abspath(DB_PATH)}")
+
+
 async def init():
+    prepare_path()
     async with aiosqlite.connect(DB_PATH) as conn:
         await conn.executescript(SCHEMA)
         await conn.commit()
