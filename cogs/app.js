@@ -17,7 +17,7 @@ function drawMembers(f){const box=$('#mem');box.replaceChildren();
 for(const g of groups){const l=g.members.filter(u=>!f||(u.skill&&u.skill.name===f));if(!l.length)continue;
 const h=mk('h3','',g.label+' ('+l.length+')');h.style.color=g.color;box.append(h);const gr=mk('div','grid');
 for(const u of l){const c=mk('div','card mem'),i=mk('img'),t=mk('div');i.src=u.avatar;t.append(mk('span','',u.name),mk('small','',u.ign?'⛏ '+u.ign:'Ingame-Name fehlt'));
-if(u.skill){const s=mk('small','',u.skill.name);s.style.color=u.skill.color;t.append(s)}if(u.status)t.append(mk('small','',{opsucht:'🟢 Auf OPSUCHT',minecraft:'🟡 Spielt Minecraft',offline:'⚫ Nicht im Spiel'}[u.status]));c.append(i,t);gr.append(c)}box.append(gr)}
+if(u.skill){const s=mk('small','',u.skill.name);s.style.color=u.skill.color;t.append(s)}if(u.status)t.append(mk('small','',{opsucht:'🟢 Online · auf OPSUCHT',minecraft:'🟢 Online · spielt Minecraft',online:'🟢 Online',offline:'⚫ Offline'}[u.status]));c.append(i,t);gr.append(c)}box.append(gr)}
 if(!box.children.length)box.append(mk('p','','Keine Mitglieder gefunden.'))}
 async function init(){
 const[,m]=await api('/api/me');me=m.user;$('#rf').hidden=!m.leader;$('#kf').hidden=!m.leader;$('#af').hidden=!m.staff;$('#ig').hidden=!(me&&!m.ign);const a=$('#auth');
@@ -50,4 +50,3 @@ loadKonto();setInterval(loadKonto,60000);
  
 $('#ig').onsubmit=async e=>{e.preventDefault();const[ok,j]=await api('/api/ign',post({name:e.target.elements['name'].value}));$('#igm').textContent=j.message;if(ok)setTimeout(()=>location.reload(),700)};
 setInterval(async()=>{const[ok,g]=await api('/api/members');if(ok){groups=g;drawMembers(cur)}},60000);
- 
