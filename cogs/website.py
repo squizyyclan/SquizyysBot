@@ -1,4 +1,5 @@
 import base64
+import datetime as dt
 import hashlib
 import hmac
 import html
@@ -135,7 +136,8 @@ class Website(commands.Cog):
                         web.get("/api/rules", self.rules), web.get("/api/stats", self.stats),
                         web.post("/api/leihen", self.borrow), web.get("/logo.jpg", self.logo),
                         web.get("/app.js", self.script), web.post("/api/regeln", self.save_rules),
-                        web.post("/api/item", self.edit_item)])
+                        web.post("/api/item", self.edit_item),
+                        web.get("/api/konto", self.konto), web.post("/api/konto", self.save_konto)])
         try:
             self.runner = web.AppRunner(app)
             await self.runner.setup()
@@ -195,6 +197,25 @@ class Website(commands.Cog):
         await ensure_message(guild, channel, "rules", discord.Embed(
             title="📜 Clan-Regeln", description=text or "–", colour=discord.Colour.red()))
         return web.json_response({"message": "✅ Regeln gespeichert."})
+ 
+    async def konto(self, request):
+        raw = await db.get_setting(GUILD_ID, "konto")
+        return web.json_response(json.loads(raw) if raw else {})
+ 
+    async def save_konto(self, request):
+        guild, member = await self.member_of(request)
+        if not member or not await leader_of(member):
+            return fail("Nur die Clan-Leitung darf das Konto ändern.", 403)
+        try:
+            d = await request.json()
+            values = {k: int(d[k]) for k in ("balance", "day", "week", "month")}
+        except Exception:
+            return fail("Bitte alle vier Zahlen ausfüllen.")
+        if any(abs(v) > 10**15 for v in values.values()):
+            return fail("Eine Zahl ist zu groß.")
+        values.update(updated=dt.datetime.now(dt.timezone.utc).isoformat(), by=member.display_name)
+        await db.set_setting(GUILD_ID, "konto", json.dumps(values))
+        return web.json_response({"message": "✅ Clan-Konto gespeichert."})
  
     async def edit_item(self, request):
         guild, member = await self.member_of(request)
