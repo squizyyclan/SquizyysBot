@@ -290,10 +290,15 @@ class Website(commands.Cog):
         if not guild:
             return web.json_response([])
  
-        async def roles_of(keys):  # (Discord-Rolle, Name, Farbe) passend zur config.py
-            return [(await get_role(guild, k), ROLE_SPECS[k][0], "#%06x" % ROLE_SPECS[k][1]) for k in keys]
+        async def roles_of(keys):  # Name und Farbe kommen direkt von der Discord-Rolle
+            out = []
+            for k in keys:
+                role = await get_role(guild, k)
+                colour = role.colour.value if role and role.colour.value else ROLE_SPECS[k][1]
+                out.append((role, role.name if role else ROLE_SPECS[k][0], "#%06x" % colour))
+            return out
  
-        ranks = await roles_of(("leader", "officer", "lender", "member"))
+        ranks = await roles_of(("leader", "officer", "builder_lead", "lender", "member", "recruit"))
         skills = await roles_of(("farmer", "builder", "miner"))
         groups = [{"label": name, "color": color, "members": []} for _, name, color in ranks]
         for m in sorted(guild.members, key=lambda x: x.display_name.lower()):
@@ -309,9 +314,15 @@ class Website(commands.Cog):
  
     async def stats(self, request):
         guild = self.bot.get_guild(GUILD_ID)
-        role = await get_role(guild, "member") if guild else None
-        return web.json_response({"clan": len(role.members) if role else 0,
-                                  "community": guild.member_count if guild else 0})
+        if not guild:
+            return web.json_response({"clan": 0, "leiher": 0})
+        clan_roles = [await get_role(guild, k) for k in ("leader", "officer", "builder_lead", "member", "recruit")]
+        clan_roles = [r for r in clan_roles if r]
+        borrower = await get_role(guild, "borrower")
+        people = [m for m in guild.members if not m.bot]
+        return web.json_response({
+            "clan": sum(1 for m in people if any(r in m.roles for r in clan_roles)),
+            "leiher": sum(1 for m in people if borrower and borrower in m.roles)})
  
     async def rules(self, request):
         text, guild = "", self.bot.get_guild(GUILD_ID)
@@ -405,5 +416,3 @@ class Website(commands.Cog):
  
  
 async def setup(bot):
-    await bot.add_cog(Website(bot))
- 
