@@ -23,6 +23,7 @@ dialog{background:#12151b;color:#fff;border:1px solid var(--l);border-radius:12p
 <nav><a class="logo" href="#home"><img src="/logo.jpg" alt="">__NAME__ <span>__TAG__</span></a>
 <a class="l" data-p="home" href="#home">Home</a><a class="l" data-p="regeln" href="#regeln">Regeln</a><a class="l" data-p="mitglieder" href="#mitglieder">Mitglieder</a><a class="l" data-p="verleih" href="#verleih">Verleih</a><a class="l" data-p="konto" href="#konto">Clan-Konto</a><a class="l" data-p="bewerben" href="#bewerben">Bewerben</a>
 <span id="auth" style="margin-left:auto"></span></nav>
+<form id="ig" hidden style="max-width:none;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 24px;background:rgba(168,85,247,.15);border-bottom:1px solid var(--l)"><b>⛏ Bitte trage deinen Ingame-Namen ein:</b><input name="name" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" required placeholder="Minecraft-Name" style="width:220px"><button class="btn">Speichern</button><span id="igm"></span></form>
 <main>
 <section id="home" class="hero"><div><img src="/logo.jpg" alt="Logo"><h1>Willkommen bei<br><span>__NAME__ __TAG__</span></h1><p>__TEXT__</p>
 <a class="btn" href="#verleih">Zum Verleih →</a> <a class="btn g" href="#bewerben">Bewerben</a>
@@ -38,7 +39,7 @@ dialog{background:#12151b;color:#fff;border:1px solid var(--l);border-radius:12p
 <label>Diesen Monat verdient<input name="month" type="number" required></label>
 <button class="btn">Speichern</button><div id="km"></div></form></section>
 <section id="bewerben"><h2>📝 Bewerben</h2><form id="f">
-<label>Minecraft-Name<input name="minecraft" maxlength="32" required></label>
+<label>Minecraft-Name<input name="minecraft" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" required></label>
 <label>Discord-Name<input name="discord" maxlength="40" required></label>
 <label>Wunschrolle<select name="rolle"><option>Farmer</option><option>Builder</option><option>Miner</option><option>Egal</option></select></label>
 <label>Erfahrung<textarea name="erfahrung" rows="3" maxlength="800"></textarea></label>
