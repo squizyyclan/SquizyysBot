@@ -24,7 +24,7 @@ const[,m]=await api('/api/me');me=m.user;$('#rf').hidden=!m.leader;$('#kf').hidd
 if(me){const i=mk('img');i.src=me.avatar||'';i.width=28;i.style.cssText='border-radius:50%;vertical-align:middle;margin-right:8px';const o=mk('a','','Abmelden');o.href='/logout';o.style.color='var(--o)';a.append(i,me.name+' · ',o);$('#f [name=discord]').value=me.username}
 else if(m.login){const b=mk('a','btn','Anmelden');b.href='/login';a.append(b)}
 $('#hint').textContent=me?'Wähle ein Item und klicke auf „Leihen“.':'Melde dich an, um Items zu leihen.';
-const[,s]=await api('/api/stats');$('#s1').textContent=s.clan;$('#s2').textContent=s.community;
+const[,s]=await api('/api/stats');$('#s1').textContent=s.clan;$('#s2').textContent=s.leiher;
 const[,r]=await api('/api/rules');const clean=t=>t.replace(/^[^\p{L}\s]+\s/u,'');for(const t of r.rules)$('#rules').append(mk('li','',clean(t)));$('#rt').value=r.rules.map(clean).join('\n');
 if(!r.rules.length)$('#rules').append(mk('li','','Noch keine Regeln eingetragen.'));
 for(const n of['Alle','Farmer','Builder','Miner']){const b=mk('button','btn g',n);b.onclick=()=>drawMembers(n==='Alle'?'':n);$('#flt').append(b)}
@@ -46,4 +46,3 @@ $('#ku').textContent=k.updated?'Zuletzt aktualisiert: '+new Date(k.updated).toLo
 const f=$('#kf').elements;for(const n of['balance','day','week','month'])if(k[n]!=null)f[n].value=k[n]}
 $('#kf').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));for(const k in f)f[k]=+f[k];
 const[ok,j]=await api('/api/konto',post(f));$('#km').textContent=j.message;if(ok)loadKonto()};
-loadKonto();setInterval(loadKonto,60000);
