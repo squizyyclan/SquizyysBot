@@ -13,10 +13,10 @@ from aiohttp import ClientSession, web
 from discord.ext import commands
  
 import db
-from cogs.loans import available, loan_embed, loan_view
+from cogs.loans import available, loan_embed, loan_view, refresh_catalog
 from cogs.loans import now as loan_now
 from config import MAX_OPEN_LOANS, ROLE_SPECS
-from utils import get_ch, get_role, is_staff
+from utils import ensure_message, get_ch, get_role, is_staff
  
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 CLAN = html.escape(os.getenv("CLAN_NAME", "Squizyys"))
@@ -31,6 +31,13 @@ CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")
 SECRET = (os.getenv("SESSION_SECRET") or os.getenv("DISCORD_TOKEN", "x")).encode()
+ 
+ 
+async def leader_of(member):
+    if member.guild_permissions.administrator:
+        return True
+    role = await get_role(member.guild, "leader")
+    return bool(role and role in member.roles)
  
  
 def sign(data):
@@ -126,7 +133,9 @@ class Website(commands.Cog):
                         web.get("/login", self.login), web.get("/callback", self.callback),
                         web.get("/logout", self.logout), web.get("/api/members", self.members),
                         web.get("/api/rules", self.rules), web.get("/api/stats", self.stats),
-                        web.post("/api/leihen", self.borrow), web.get("/logo.jpg", self.logo)])
+                        web.post("/api/leihen", self.borrow), web.get("/logo.jpg", self.logo),
+                        web.get("/app.js", self.script), web.post("/api/regeln", self.save_rules),
+                        web.post("/api/item", self.edit_item)])
         try:
             self.runner = web.AppRunner(app)
             await self.runner.setup()
@@ -158,8 +167,67 @@ class Website(commands.Cog):
     def user(self, request):
         return unsign(request.cookies.get("s", ""))
  
+    async def script(self, request):
+        return web.FileResponse(os.path.join(os.path.dirname(__file__), "app.js"))
+ 
+    async def member_of(self, request):
+        user, guild = self.user(request), self.bot.get_guild(GUILD_ID)
+        return guild, (guild.get_member(int(user["id"])) if user and guild else None)
+ 
     async def me(self, request):
-        return web.json_response({"user": self.user(request), "login": bool(CLIENT_ID and CLIENT_SECRET and PUBLIC_URL)})
+        guild, member = await self.member_of(request)
+        return web.json_response({
+            "user": self.user(request), "login": bool(CLIENT_ID and CLIENT_SECRET and PUBLIC_URL),
+            "leader": bool(member and await leader_of(member)), "staff": bool(member and await is_staff(member))})
+ 
+    async def save_rules(self, request):
+        guild, member = await self.member_of(request)
+        if not member or not await leader_of(member):
+            return fail("Nur die Clan-Leitung darf die Regeln ändern.", 403)
+        try:
+            lines = [x.strip() for x in str((await request.json())["rules"]).split("\n") if x.strip()][:20]
+        except Exception:
+            return fail("Ungültige Anfrage.")
+        text = "\n".join((f"{n}\ufe0f\u20e3 " if n < 10 else "🔹 ") + x[:200] for n, x in enumerate(lines, 1))
+        channel = await get_ch(guild, "rules")
+        if not channel:
+            return fail("Der Regel-Kanal fehlt (/setup).", 503)
+        await ensure_message(guild, channel, "rules", discord.Embed(
+            title="📜 Clan-Regeln", description=text or "–", colour=discord.Colour.red()))
+        return web.json_response({"message": "✅ Regeln gespeichert."})
+ 
+    async def edit_item(self, request):
+        guild, member = await self.member_of(request)
+        if not member or not await is_staff(member):
+            return fail("Nur das Team darf Items ändern.", 403)
+        try:
+            d = await request.json()
+            name, action, stock = str(d["name"]).strip()[:60], d.get("action", "set"), int(d.get("stock", 0))
+            desc = str(d.get("description", "")).strip()[:200] or None
+        except Exception:
+            return fail("Ungültige Anfrage.")
+        row = await db.fetchone("SELECT * FROM items WHERE guild_id=? AND name=?", (GUILD_ID, name))
+        lent = row["stock"] - await available(row["id"]) if row else 0
+        if not name:
+            return fail("Name fehlt.")
+        if action == "delete":
+            if not row:
+                return fail("Item nicht gefunden.", 404)
+            if lent:
+                return fail("Das Item ist noch verliehen.")
+            await db.execute("DELETE FROM items WHERE id=?", (row["id"],))
+            text = f"🗑 {name} gelöscht."
+        elif not lent <= stock <= 100000:
+            return fail(f"Ungültiger Bestand (aktuell {lent}× verliehen).")
+        elif row:
+            await db.execute("UPDATE items SET stock=?, description=? WHERE id=?", (stock, desc, row["id"]))
+            text = f"✅ {name} aktualisiert."
+        else:
+            await db.execute("INSERT INTO items (guild_id, name, stock, description) VALUES (?,?,?,?)",
+                             (GUILD_ID, name, stock, desc))
+            text = f"✅ {name} hinzugefügt."
+        await refresh_catalog(guild)
+        return web.json_response({"message": text})
  
     async def login(self, request):
         if not (CLIENT_ID and CLIENT_SECRET and PUBLIC_URL):
@@ -317,3 +385,4 @@ class Website(commands.Cog):
  
 async def setup(bot):
     await bot.add_cog(Website(bot))
+ 
