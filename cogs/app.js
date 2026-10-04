@@ -20,7 +20,7 @@ for(const u of l){const c=mk('div','card mem'),i=mk('img'),t=mk('div');i.src=u.a
 if(u.skill){const s=mk('small','',u.skill.name);s.style.color=u.skill.color;t.append(s)}c.append(i,t);gr.append(c)}box.append(gr)}
 if(!box.children.length)box.append(mk('p','','Keine Mitglieder gefunden.'))}
 async function init(){
-const[,m]=await api('/api/me');me=m.user;$('#rf').hidden=!m.leader;$('#af').hidden=!m.staff;const a=$('#auth');
+const[,m]=await api('/api/me');me=m.user;$('#rf').hidden=!m.leader;$('#kf').hidden=!m.leader;$('#af').hidden=!m.staff;const a=$('#auth');
 if(me){const i=mk('img');i.src=me.avatar||'';i.width=28;i.style.cssText='border-radius:50%;vertical-align:middle;margin-right:8px';const o=mk('a','','Abmelden');o.href='/logout';o.style.color='var(--o)';a.append(i,me.name+' · ',o);$('#f [name=discord]').value=me.username}
 else if(m.login){const b=mk('a','btn','Anmelden');b.href='/login';a.append(b)}
 $('#hint').textContent=me?'Wähle ein Item und klicke auf „Leihen“.':'Melde dich an, um Items zu leihen.';
@@ -37,3 +37,13 @@ $('#f').onsubmit=async e=>{e.preventDefault();const b=$('#f button'),m=$('#msg')
 try{const[ok,j]=await api('/api/bewerbung',post(Object.fromEntries(new FormData(e.target))));m.textContent=j.message;if(ok)e.target.reset()}catch(x){m.textContent='Fehler beim Senden.'}b.disabled=false};
 $('#rf').onsubmit=async e=>{e.preventDefault();const[ok,j]=await api('/api/regeln',post({rules:$('#rt').value}));$('#rm').textContent=j.message;if(ok)setTimeout(()=>location.reload(),900)};
 $('#af').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));f.stock=+f.stock;const[,j]=await api('/api/item',post(f));$('#am').textContent=j.message;load()};
+ 
+const fmt=v=>v==null?'–':Number(v).toLocaleString('de-DE')+' $';
+async function loadKonto(){const[,k]=await api('/api/konto'),g=$('#kg');g.replaceChildren();
+for(const[l,v]of[['Kontostand',k.balance],['Heute',k.day],['Diese Woche',k.week],['Dieser Monat',k.month]]){
+const c=mk('div','card'),b=mk('b','',fmt(v));b.style.cssText='display:block;font-size:1.6rem;color:var(--o)';c.append(mk('small','',l),b);g.append(c)}
+$('#ku').textContent=k.updated?'Zuletzt aktualisiert: '+new Date(k.updated).toLocaleString('de-DE')+(k.by?' von '+k.by:''):'Noch keine Angaben.';
+const f=$('#kf').elements;for(const n of['balance','day','week','month'])if(k[n]!=null)f[n].value=k[n]}
+$('#kf').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));for(const k in f)f[k]=+f[k];
+const[ok,j]=await api('/api/konto',post(f));$('#km').textContent=j.message;if(ok)loadKonto()};
+loadKonto();setInterval(loadKonto,60000);
