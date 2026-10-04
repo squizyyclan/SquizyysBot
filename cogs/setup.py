@@ -6,7 +6,7 @@ import db
 from cogs.community import SkillRoleView, TicketPanelView
 from cogs.loans import BorrowerRoleView, refresh_catalog
 from config import LAYOUT, ROLE_ORDER, ROLE_SPECS
-from utils import ensure_message, find_role
+from utils import _norm, ensure_message, find_role, get_role
  
 RULES_TEXT = (
     "1️⃣ Sei respektvoll – kein Mobbing, keine Beleidigungen.\n"
@@ -47,9 +47,9 @@ async def ensure_role(guild, key, spec):
     permissions = discord.Permissions(**perms)
     wanted = dict(name=name, colour=discord.Colour(colour), hoist=hoist,
                   mentionable=(key == "lender"), permissions=permissions)
-    role = None
+    role = find_role(guild, name, fuzzy=False)  # exakter Name hat Vorrang
     rid = await db.get_setting(guild.id, f"role_{key}")
-    if rid:
+    if role is None and rid:
         role = guild.get_role(int(rid))
     role = role or find_role(guild, name)
     created = role is None
@@ -101,6 +101,44 @@ async def ensure_channel(guild, spec, category, overwrites, voice):
             await ch.edit(reason="ClanBot Setup", **changes)
     await db.set_setting(guild.id, f"ch_{spec['key']}", ch.id)
     return ch, created
+ 
+ 
+# Diese Rollen bleiben zusätzlich zu den Rollen aus config.py immer erhalten (Bots, VIP)
+KEEP_EXTRA = ["⭐ | VIP", "🎶 | Musikbot", "🤖 | SquizyyBot"]
+ 
+ 
+def unused_roles(guild):
+    """Alle Rollen, die nicht zur Liste gehören (ohne @everyone, Bot-/Booster-Rollen und Rollen über dem Bot)."""
+    keep = {_norm(spec[0]) for spec in ROLE_SPECS.values()} | {_norm(n) for n in KEEP_EXTRA}
+    top = guild.me.top_role.position
+    return [r for r in guild.roles
+            if not r.is_default() and not r.managed and r.position < top and _norm(r.name) not in keep]
+ 
+ 
+class CleanupView(discord.ui.View):
+    def __init__(self, user_id, roles):
+        super().__init__(timeout=300)
+        self.user_id, self.roles = user_id, roles
+ 
+    @discord.ui.button(label="Ja, alle löschen", emoji="🗑", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("Nur der Admin, der /setup ausgeführt hat.", ephemeral=True)
+        await interaction.response.defer()
+        deleted = 0
+        for role in self.roles:
+            try:
+                await role.delete(reason="ClanBot: nicht benötigte Rolle")
+                deleted += 1
+            except discord.HTTPException:
+                pass
+        self.stop()
+        await interaction.edit_original_response(content=f"🗑 {deleted} von {len(self.roles)} Rollen gelöscht.", view=None)
+ 
+    @discord.ui.button(label="Abbrechen", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.stop()
+        await interaction.response.edit_message(content="Abgebrochen. Es wurde nichts gelöscht.", view=None)
  
  
 class SetupCog(commands.Cog, name="Setup"):
@@ -162,6 +200,24 @@ class SetupCog(commands.Cog, name="Setup"):
                               "• Regeln im Regel-Kanal anpassen", inline=False)
         await interaction.followup.send(embed=embed)
  
+        extras = unused_roles(guild)
+        if extras:
+            lines = "\n".join(f"• {r.name} ({len(r.members)} Personen)" for r in extras)[:1700]
+            await interaction.followup.send(
+                f"Diese Rollen gehören **nicht** zur Liste und würden gelöscht (nicht rückgängig zu machen):\n{lines}",
+                view=CleanupView(interaction.user.id, extras), ephemeral=True)
+ 
+    @app_commands.command(name="rollen", description="Zeigt, welche Rollen der Bot erkannt hat")
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(administrator=True)
+    async def roles_check(self, interaction: discord.Interaction):
+        lines = []
+        for key in ROLE_ORDER:
+            role = await get_role(interaction.guild, key)
+            found = f"{role.mention} ({len(role.members)} Personen)" if role else "❌ nicht gefunden"
+            lines.append(f"**{ROLE_SPECS[key][0]}** → {found}")
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+ 
     async def post_panels(self, guild, ch):
         blue = discord.Colour.blue()
         await ensure_message(guild, ch["rules"], "rules",
@@ -198,4 +254,3 @@ class SetupCog(commands.Cog, name="Setup"):
  
 async def setup(bot):
     await bot.add_cog(SetupCog(bot))
- 
