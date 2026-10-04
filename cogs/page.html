@@ -19,9 +19,9 @@ ol{padding-left:22px}li{margin:10px 0}
 input,select,textarea{width:100%;font:inherit;color:inherit;background:var(--c);border:1px solid var(--l);border-radius:8px;padding:10px}
 form{display:grid;gap:12px;max-width:560px}label{display:grid;gap:4px;color:var(--m);font-size:.9rem}
 dialog{background:#12151b;color:#fff;border:1px solid var(--l);border-radius:12px}.hp{position:absolute;left:-9999px}
-</style></head><body>
+.tw{overflow-x:auto;margin-top:14px}table{width:100%;border-collapse:collapse}th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--l);white-space:nowrap}th{color:var(--m);font-weight:600}</style></head><body>
 <nav><a class="logo" href="#home"><img src="/logo.jpg" alt="">__NAME__ <span>__TAG__</span></a>
-<a class="l" data-p="home" href="#home">Home</a><a class="l" data-p="regeln" href="#regeln">Regeln</a><a class="l" data-p="mitglieder" href="#mitglieder">Mitglieder</a><a class="l" data-p="verleih" href="#verleih">Verleih</a><a class="l" data-p="konto" href="#konto">Clan-Konto</a><a class="l" data-p="bewerben" href="#bewerben">Bewerben</a>
+<a class="l" data-p="home" href="#home">Home</a><a class="l" data-p="regeln" href="#regeln">Regeln</a><a class="l" data-p="mitglieder" href="#mitglieder">Mitglieder</a><a class="l" data-p="verleih" href="#verleih">Verleih</a><a class="l" data-p="shards" href="#shards">Shards</a><a class="l" data-p="markt" href="#markt">Markt</a><a class="l" data-p="ah" href="#ah">AH</a><a class="l" data-p="konto" href="#konto">Clan-Konto</a><a class="l" data-p="bewerben" href="#bewerben">Bewerben</a>
 <span id="auth" style="margin-left:auto"></span></nav>
 <form id="ig" hidden style="max-width:none;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 24px;background:rgba(168,85,247,.15);border-bottom:1px solid var(--l)"><b>⛏ Bitte trage deinen Ingame-Namen ein:</b><input name="name" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" required placeholder="Minecraft-Name" style="width:220px"><button class="btn">Speichern</button><span id="igm"></span></form>
 <main>
@@ -31,6 +31,9 @@ dialog{background:#12151b;color:#fff;border:1px solid var(--l);border-radius:12p
 <section id="regeln"><h2>📜 Regeln</h2><ol id="rules"></ol><form id="rf" hidden><label>Regeln bearbeiten (eine pro Zeile)<textarea id="rt" rows="8"></textarea></label><button class="btn">Regeln speichern</button><div id="rm"></div></form></section>
 <section id="mitglieder"><h2>👥 Mitglieder</h2><div id="flt" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div><div id="mem"></div></section>
 <section id="verleih"><h2>📦 Verleih</h2><p id="hint" style="color:var(--m)"></p><form id="af" hidden><b>🛠️ Item verwalten (Team)</b><label>Name<input name="name" maxlength="60" required></label><label>Bestand<input name="stock" type="number" min="0" required></label><label>Beschreibung<input name="description" maxlength="200"></label><button class="btn">Speichern</button><div id="am"></div></form><input id="q" placeholder="Item suchen …" style="margin-bottom:14px"><div id="items" class="grid"></div></section>
+<section id="shards"><h2>💎 Shards</h2><input placeholder="Item suchen …"><div class="tw"></div></section>
+<section id="markt"><h2>📈 Markt</h2><input placeholder="Item suchen …"><div class="tw"></div></section>
+<section id="ah"><h2>🔨 Auktionshaus</h2><input placeholder="Item suchen …"><div class="tw"></div></section>
 <section id="konto"><h2>💰 Clan-Konto</h2><div class="grid" id="kg"></div><p id="ku" style="color:var(--m)"></p>
 <form id="kf" hidden><b>Konto aktualisieren (Clan-Leitung)</b>
 <label>Kontostand<input name="balance" type="number" required></label>
@@ -49,4 +52,3 @@ dialog{background:#12151b;color:#fff;border:1px solid var(--l);border-radius:12p
 <dialog id="dlg"><form id="lf"><b id="dn"></b><label>Menge<input name="menge" type="number" min="1" value="1"></label><label>Tage<input name="tage" type="number" min="1" max="60" value="7"></label><div id="lm"></div>
 <button class="btn">Anfragen</button><button type="button" class="btn g" onclick="document.querySelector('#dlg').close()">Abbrechen</button></form></dialog>
 <script src="/app.js"></script></body></html>
- 
