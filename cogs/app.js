@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s),mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const api=async(u,o)=>{const r=await fetch(u,o);return[r.ok,await r.json()]},post=b=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-let items=[],me=null,groups=[];
+let items=[],me=null,groups=[],cur='';
 function route(){const p=location.hash.slice(1)||'home';document.querySelectorAll('main>section').forEach(s=>s.hidden=s.id!==p);document.querySelectorAll('nav a.l').forEach(a=>a.classList.toggle('on',a.dataset.p===p));scrollTo(0,0)}
 addEventListener('hashchange',route);route();
 function draw(){const q=$('#q').value.toLowerCase(),box=$('#items');box.replaceChildren();const l=items.filter(i=>i.name.toLowerCase().includes(q));
@@ -16,18 +16,18 @@ async function load(){const[ok,d]=await api('/api/items');if(ok){items=d;draw()}
 function drawMembers(f){const box=$('#mem');box.replaceChildren();
 for(const g of groups){const l=g.members.filter(u=>!f||(u.skill&&u.skill.name===f));if(!l.length)continue;
 const h=mk('h3','',g.label+' ('+l.length+')');h.style.color=g.color;box.append(h);const gr=mk('div','grid');
-for(const u of l){const c=mk('div','card mem'),i=mk('img'),t=mk('div');i.src=u.avatar;t.append(mk('span','',u.name));
-if(u.skill){const s=mk('small','',u.skill.name);s.style.color=u.skill.color;t.append(s)}c.append(i,t);gr.append(c)}box.append(gr)}
+for(const u of l){const c=mk('div','card mem'),i=mk('img'),t=mk('div');i.src=u.avatar;t.append(mk('span','',u.name),mk('small','',u.ign?'⛏ '+u.ign:'Ingame-Name fehlt'));
+if(u.skill){const s=mk('small','',u.skill.name);s.style.color=u.skill.color;t.append(s)}if(u.status)t.append(mk('small','',{opsucht:'🟢 Auf OPSUCHT',minecraft:'🟡 Spielt Minecraft',offline:'⚫ Nicht im Spiel'}[u.status]));c.append(i,t);gr.append(c)}box.append(gr)}
 if(!box.children.length)box.append(mk('p','','Keine Mitglieder gefunden.'))}
 async function init(){
-const[,m]=await api('/api/me');me=m.user;$('#rf').hidden=!m.leader;$('#kf').hidden=!m.leader;$('#af').hidden=!m.staff;const a=$('#auth');
-if(me){const i=mk('img');i.src=me.avatar||'';i.width=28;i.style.cssText='border-radius:50%;vertical-align:middle;margin-right:8px';const o=mk('a','','Abmelden');o.href='/logout';o.style.color='var(--o)';a.append(i,me.name+' · ',o);$('#f [name=discord]').value=me.username}
+const[,m]=await api('/api/me');me=m.user;$('#rf').hidden=!m.leader;$('#kf').hidden=!m.leader;$('#af').hidden=!m.staff;$('#ig').hidden=!(me&&!m.ign);const a=$('#auth');
+if(me){const i=mk('img');i.src=m.ign?'https://crafthead.net/helm/'+m.ign+'/64':(me.avatar||'');i.width=28;i.style.cssText='border-radius:50%;vertical-align:middle;margin-right:8px';const o=mk('a','','Abmelden');o.href='/logout';o.style.color='var(--o)';a.append(i,me.name+' · ',o);$('#f [name=discord]').value=me.username}
 else if(m.login){const b=mk('a','btn','Anmelden');b.href='/login';a.append(b)}
 $('#hint').textContent=me?'Wähle ein Item und klicke auf „Leihen“.':'Melde dich an, um Items zu leihen.';
 const[,s]=await api('/api/stats');$('#s1').textContent=s.clan;$('#s2').textContent=s.leiher;
 const[,r]=await api('/api/rules');const clean=t=>t.replace(/^[^\p{L}\s]+\s/u,'');for(const t of r.rules)$('#rules').append(mk('li','',clean(t)));$('#rt').value=r.rules.map(clean).join('\n');
 if(!r.rules.length)$('#rules').append(mk('li','','Noch keine Regeln eingetragen.'));
-for(const n of['Alle','Farmer','Builder','Miner']){const b=mk('button','btn g',n);b.onclick=()=>drawMembers(n==='Alle'?'':n);$('#flt').append(b)}
+for(const n of['Alle','Farmer','Builder','Miner']){const b=mk('button','btn g',n);b.onclick=()=>drawMembers(cur=n==='Alle'?'':n);$('#flt').append(b)}
 [,groups]=await api('/api/members');drawMembers('');
 load();setInterval(load,30000)}
 $('#q').oninput=draw;init();
@@ -46,3 +46,8 @@ $('#ku').textContent=k.updated?'Zuletzt aktualisiert: '+new Date(k.updated).toLo
 const f=$('#kf').elements;for(const n of['balance','day','week','month'])if(k[n]!=null)f[n].value=k[n]}
 $('#kf').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));for(const k in f)f[k]=+f[k];
 const[ok,j]=await api('/api/konto',post(f));$('#km').textContent=j.message;if(ok)loadKonto()};
+loadKonto();setInterval(loadKonto,60000);
+ 
+$('#ig').onsubmit=async e=>{e.preventDefault();const[ok,j]=await api('/api/ign',post({name:e.target.elements['name'].value}));$('#igm').textContent=j.message;if(ok)setTimeout(()=>location.reload(),700)};
+setInterval(async()=>{const[ok,g]=await api('/api/members');if(ok){groups=g;drawMembers(cur)}},60000);
+ 
