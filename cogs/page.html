@@ -21,7 +21,7 @@ form{display:grid;gap:12px;max-width:560px}label{display:grid;gap:4px;color:var(
 dialog{background:#12151b;color:#fff;border:1px solid var(--l);border-radius:12px}.hp{position:absolute;left:-9999px}
 </style></head><body>
 <nav><a class="logo" href="#home"><img src="/logo.jpg" alt="">__NAME__ <span>__TAG__</span></a>
-<a class="l" data-p="home" href="#home">Home</a><a class="l" data-p="regeln" href="#regeln">Regeln</a><a class="l" data-p="mitglieder" href="#mitglieder">Mitglieder</a><a class="l" data-p="verleih" href="#verleih">Verleih</a><a class="l" data-p="bewerben" href="#bewerben">Bewerben</a>
+<a class="l" data-p="home" href="#home">Home</a><a class="l" data-p="regeln" href="#regeln">Regeln</a><a class="l" data-p="mitglieder" href="#mitglieder">Mitglieder</a><a class="l" data-p="verleih" href="#verleih">Verleih</a><a class="l" data-p="konto" href="#konto">Clan-Konto</a><a class="l" data-p="bewerben" href="#bewerben">Bewerben</a>
 <span id="auth" style="margin-left:auto"></span></nav>
 <main>
 <section id="home" class="hero"><div><img src="/logo.jpg" alt="Logo"><h1>Willkommen bei<br><span>__NAME__ __TAG__</span></h1><p>__TEXT__</p>
@@ -30,6 +30,13 @@ dialog{background:#12151b;color:#fff;border:1px solid var(--l);border-radius:12p
 <section id="regeln"><h2>📜 Regeln</h2><ol id="rules"></ol><form id="rf" hidden><label>Regeln bearbeiten (eine pro Zeile)<textarea id="rt" rows="8"></textarea></label><button class="btn">Regeln speichern</button><div id="rm"></div></form></section>
 <section id="mitglieder"><h2>👥 Mitglieder</h2><div id="flt" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div><div id="mem"></div></section>
 <section id="verleih"><h2>📦 Verleih</h2><p id="hint" style="color:var(--m)"></p><form id="af" hidden><b>🛠️ Item verwalten (Team)</b><label>Name<input name="name" maxlength="60" required></label><label>Bestand<input name="stock" type="number" min="0" required></label><label>Beschreibung<input name="description" maxlength="200"></label><button class="btn">Speichern</button><div id="am"></div></form><input id="q" placeholder="Item suchen …" style="margin-bottom:14px"><div id="items" class="grid"></div></section>
+<section id="konto"><h2>💰 Clan-Konto</h2><div class="grid" id="kg"></div><p id="ku" style="color:var(--m)"></p>
+<form id="kf" hidden><b>Konto aktualisieren (Clan-Leitung)</b>
+<label>Kontostand<input name="balance" type="number" required></label>
+<label>Heute verdient<input name="day" type="number" required></label>
+<label>Diese Woche verdient<input name="week" type="number" required></label>
+<label>Diesen Monat verdient<input name="month" type="number" required></label>
+<button class="btn">Speichern</button><div id="km"></div></form></section>
 <section id="bewerben"><h2>📝 Bewerben</h2><form id="f">
 <label>Minecraft-Name<input name="minecraft" maxlength="32" required></label>
 <label>Discord-Name<input name="discord" maxlength="40" required></label>
