@@ -1,13 +1,13 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-
+ 
 import db
 from cogs.community import SkillRoleView, TicketPanelView
 from cogs.loans import BorrowerRoleView, refresh_catalog
 from config import LAYOUT, ROLE_ORDER, ROLE_SPECS
-from utils import ensure_message
-
+from utils import ensure_message, find_role
+ 
 RULES_TEXT = (
     "1️⃣ Sei respektvoll – kein Mobbing, keine Beleidigungen.\n"
     "2️⃣ Kein Griefing, Stehlen oder Cheaten – weder im Clan noch bei anderen.\n"
@@ -16,8 +16,8 @@ RULES_TEXT = (
     "5️⃣ Den Anweisungen von Leitung und Offizieren ist zu folgen.\n\n"
     "*Diese Regeln kannst du jederzeit direkt in dieser Nachricht ändern – /setup überschreibt sie nicht.*"
 )
-
-
+ 
+ 
 def build_overwrites(guild, roles, view, write, voice=False):
     view, write = set(view), set(write)
     keys = view | write | {"leader", "officer"}
@@ -40,8 +40,8 @@ def build_overwrites(guild, roles, view, write, voice=False):
         view_channel=True, send_messages=True, embed_links=True, manage_channels=True,
         manage_messages=True, read_message_history=True, **extra)
     return overwrites
-
-
+ 
+ 
 async def ensure_role(guild, key, spec):
     name, colour, hoist, perms = spec
     permissions = discord.Permissions(**perms)
@@ -51,20 +51,14 @@ async def ensure_role(guild, key, spec):
     rid = await db.get_setting(guild.id, f"role_{key}")
     if rid:
         role = guild.get_role(int(rid))
-    role = role or discord.utils.get(guild.roles, name=name)
+    role = role or find_role(guild, name)
     created = role is None
     if created:
         role = await guild.create_role(**wanted, reason="ClanBot Setup")
-    elif (role.name != name or role.colour.value != colour or role.hoist != hoist
-          or role.permissions != permissions or role.mentionable != wanted["mentionable"]):
-        try:
-            await role.edit(**wanted, reason="ClanBot Setup")
-        except discord.Forbidden:
-            pass
     await db.set_setting(guild.id, f"role_{key}", role.id)
     return role, created
-
-
+ 
+ 
 async def ensure_category(guild, spec, overwrites):
     cat = None
     cid = await db.get_setting(guild.id, f"cat_{spec['key']}")
@@ -78,8 +72,8 @@ async def ensure_category(guild, spec, overwrites):
         await cat.edit(overwrites=overwrites, reason="ClanBot Setup")
     await db.set_setting(guild.id, f"cat_{spec['key']}", cat.id)
     return cat, created
-
-
+ 
+ 
 async def ensure_channel(guild, spec, category, overwrites, voice):
     ch = None
     cid = await db.get_setting(guild.id, f"ch_{spec['key']}")
@@ -107,12 +101,12 @@ async def ensure_channel(guild, spec, category, overwrites, voice):
             await ch.edit(reason="ClanBot Setup", **changes)
     await db.set_setting(guild.id, f"ch_{spec['key']}", ch.id)
     return ch, created
-
-
+ 
+ 
 class SetupCog(commands.Cog, name="Setup"):
     def __init__(self, bot):
         self.bot = bot
-
+ 
     @app_commands.command(name="setup", description="Richtet den Server ein bzw. bringt ihn auf den neuesten Stand")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(administrator=True)
@@ -126,15 +120,16 @@ class SetupCog(commands.Cog, name="Setup"):
                 roles[key], created = await ensure_role(guild, key, ROLE_SPECS[key])
                 if created:
                     new_roles.append(roles[key].name)
-
+ 
             top = guild.me.top_role.position
-            if top > len(ROLE_ORDER):
+            if new_roles and top > len(ROLE_ORDER):
                 try:
                     await guild.edit_role_positions(
-                        positions={roles[k]: top - 1 - i for i, k in enumerate(ROLE_ORDER)})
+                        positions={roles[k]: top - 1 - i for i, k in enumerate(ROLE_ORDER)
+                                   if roles[k].name in new_roles})
                 except discord.HTTPException:
                     pass
-
+ 
             channels = {}
             for cat_spec in LAYOUT:
                 voice = cat_spec.get("voice", False)
@@ -149,13 +144,13 @@ class SetupCog(commands.Cog, name="Setup"):
                     checked += 1
                     if created:
                         new_chans.append(channels[ch_spec["key"]].name)
-
+ 
             await self.post_panels(guild, channels)
         except discord.Forbidden:
             return await interaction.followup.send(
                 "❌ Mir fehlen Rechte. Gib dem Bot **Administrator** (oder Rollen + Kanäle verwalten) und schiebe "
                 "die Bot-Rolle in den Servereinstellungen ganz nach oben. Danach /setup erneut ausführen.")
-
+ 
         embed = discord.Embed(title="✅ Setup abgeschlossen", colour=discord.Colour.green())
         embed.add_field(name="Neue Rollen", value=", ".join(new_roles) or "–", inline=False)
         embed.add_field(name="Neue Kategorien", value=", ".join(new_cats) or "–", inline=False)
@@ -166,7 +161,7 @@ class SetupCog(commands.Cog, name="Setup"):
                         value="• Items eintragen: `/item hinzufuegen`\n• Leitung/Offiziere/Verleiher Rollen geben\n"
                               "• Regeln im Regel-Kanal anpassen", inline=False)
         await interaction.followup.send(embed=embed)
-
+ 
     async def post_panels(self, guild, ch):
         blue = discord.Colour.blue()
         await ensure_message(guild, ch["rules"], "rules",
@@ -199,9 +194,8 @@ class SetupCog(commands.Cog, name="Setup"):
                                  "4️⃣ Gib das Item rechtzeitig zurück. Vorher erinnert dich der Bot.\n\n"
                                  "`/leihen meine` zeigt deine aktuellen Leihen.")))
         await refresh_catalog(guild)
-
-
+ 
+ 
 async def setup(bot):
     await bot.add_cog(SetupCog(bot))
-async def setup(bot):
-    await bot.add_cog(SetupCog(bot))
+ 
