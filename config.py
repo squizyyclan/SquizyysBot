@@ -10,10 +10,10 @@ ROLE_SPECS = {
     "officer": ("🎖️ | Offizier", 0xE67E22, True, dict(
         kick_members=True, moderate_members=True, manage_messages=True)),
     "builder_lead": ("🚧 | Builder - Leitung", 0x1ABC9C, True, {}),
-    "lender": ("Verleiher", 0xF1C40F, True, {}),
+    "lender": ("🤝 | Verleiher", 0xF1C40F, True, {}),
     "member": ("👤 | Mitglied", 0x2ECC71, False, {}),
     "recruit": ("🔰 | Rekrut", 0x95A5A6, False, {}),
-    "borrower": ("Leiher", 0x3498DB, False, {}),
+    "borrower": ("💵 | Leiher", 0x3498DB, False, {}),
     "farmer": ("Farmer", 0x8BC34A, False, {}),
     "builder": ("Builder", 0x9B59B6, False, {}),
     "miner": ("Miner", 0x795548, False, {}),
