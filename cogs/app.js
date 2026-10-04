@@ -50,3 +50,16 @@ loadKonto();setInterval(loadKonto,60000);
  
 $('#ig').onsubmit=async e=>{e.preventDefault();const[ok,j]=await api('/api/ign',post({name:e.target.elements['name'].value}));$('#igm').textContent=j.message;if(ok)setTimeout(()=>location.reload(),700)};
 setInterval(async()=>{const[ok,g]=await api('/api/members');if(ok){groups=g;drawMembers(cur)}},60000);
+ 
+const opsData={};
+function opsTable(k){const box=document.querySelector('#'+k+' .tw'),q=document.querySelector('#'+k+' input').value.toLowerCase();box.replaceChildren();
+let rows=opsData[k];if(!rows)return;
+if(!Array.isArray(rows))rows=Object.values(rows).find(Array.isArray)||Object.entries(rows).map(([n,v])=>typeof v==='object'&&v?{name:n,...v}:{name:n,wert:v});
+const l=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(q)).slice(0,200);
+if(!l.length)return box.append(mk('p','','Keine Einträge.'));
+const cols=[];for(const r of rows.slice(0,50))for(const[c,v]of Object.entries(r))if((typeof v!=='object'||v===null)&&!cols.includes(c)&&cols.length<7)cols.push(c);
+const t=mk('table'),h=mk('tr');for(const c of cols)h.append(mk('th','',c));t.append(h);
+for(const r of l){const tr=mk('tr');for(const c of cols){const v=r[c];tr.append(mk('td','',typeof v==='number'?v.toLocaleString('de-DE'):String(v??'').slice(0,60)))}t.append(tr)}
+box.append(t)}
+async function loadOps(k){const[ok,d]=await api('/api/ops/'+k),box=document.querySelector('#'+k+' .tw');if(!ok){box.textContent=d.message;return}opsData[k]=d;opsTable(k)}
+for(const k of['shards','markt','ah']){document.querySelector('#'+k+' input').oninput=()=>opsTable(k);loadOps(k);setInterval(()=>loadOps(k),60000)}
