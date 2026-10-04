@@ -16,10 +16,12 @@ from discord.ext import commands
 import db
 from cogs.loans import available, loan_embed, loan_view, refresh_catalog
 from cogs.loans import now as loan_now
+from cogs.ingame import get_ign, set_ign, valid_ign
 from config import MAX_OPEN_LOANS, ROLE_SPECS
 from utils import ensure_message, get_ch, get_role, is_staff
  
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
+PRESENCE = os.getenv("PRESENCE_INTENT", "0") == "1"
 CLAN = html.escape(os.getenv("CLAN_NAME", "Squizyys"))
 ROLES = ("Farmer", "Builder", "Miner", "Egal")
 COLORS = {"pending": 0xF1C40F, "accepted": 0x2ECC71, "declined": 0xE74C3C}
@@ -100,6 +102,8 @@ class AppButton(discord.ui.DynamicItem[discord.ui.Button], template=r"app:(?P<ac
         note = "Person nicht auf dem Server gefunden – bitte selbst melden."
         if member:
             if accepted:
+                if valid_ign(row["minecraft"]):
+                    await set_ign(member.id, row["minecraft"])
                 full, recruit = await get_role(guild, "member"), await get_role(guild, "recruit")
                 if full:
                     await member.add_roles(full)
@@ -115,6 +119,23 @@ class AppButton(discord.ui.DynamicItem[discord.ui.Button], template=r"app:(?P<ac
             embed=app_embed(row, f"{'Angenommen' if accepted else 'Abgelehnt'} von {interaction.user.display_name}"),
             view=None)
         await interaction.followup.send(note, ephemeral=True)
+ 
+ 
+def play_status(member):
+    """Best-Effort über Discord-Aktivitäten (OPSUCHT selbst bietet keine öffentliche Online-Abfrage)."""
+    if not PRESENCE:
+        return None
+    status = "offline"
+    for a in member.activities:
+        if isinstance(a, discord.CustomActivity):
+            continue
+        text = " ".join(str(x) for x in (a.name, getattr(a, "details", None), getattr(a, "state", None),
+                                         getattr(a, "large_image_text", None)) if x).lower()
+        if "opsucht" in text:
+            return "opsucht"
+        if "minecraft" in text:
+            status = "minecraft"
+    return status
  
  
 class Website(commands.Cog):
@@ -137,7 +158,8 @@ class Website(commands.Cog):
                         web.post("/api/leihen", self.borrow), web.get("/logo.jpg", self.logo),
                         web.get("/app.js", self.script), web.post("/api/regeln", self.save_rules),
                         web.post("/api/item", self.edit_item),
-                        web.get("/api/konto", self.konto), web.post("/api/konto", self.save_konto)])
+                        web.get("/api/konto", self.konto), web.post("/api/konto", self.save_konto),
+                        web.post("/api/ign", self.save_ign)])
         try:
             self.runner = web.AppRunner(app)
             await self.runner.setup()
@@ -180,7 +202,8 @@ class Website(commands.Cog):
         guild, member = await self.member_of(request)
         return web.json_response({
             "user": self.user(request), "login": bool(CLIENT_ID and CLIENT_SECRET and PUBLIC_URL),
-            "leader": bool(member and await leader_of(member)), "staff": bool(member and await is_staff(member))})
+            "leader": bool(member and await leader_of(member)), "staff": bool(member and await is_staff(member)),
+            "ign": await get_ign(member.id) if member else None})
  
     async def save_rules(self, request):
         guild, member = await self.member_of(request)
@@ -197,6 +220,19 @@ class Website(commands.Cog):
         await ensure_message(guild, channel, "rules", discord.Embed(
             title="📜 Clan-Regeln", description=text or "–", colour=discord.Colour.red()))
         return web.json_response({"message": "✅ Regeln gespeichert."})
+ 
+    async def save_ign(self, request):
+        guild, member = await self.member_of(request)
+        if not member:
+            return fail("Bitte melde dich an (du musst auf unserem Discord sein).", 401)
+        try:
+            name = str((await request.json())["name"]).strip()
+        except Exception:
+            return fail("Ungültige Anfrage.")
+        if not valid_ign(name):
+            return fail("Ungültiger Name (3–16 Zeichen: Buchstaben, Zahlen, _).")
+        await set_ign(member.id, name)
+        return web.json_response({"message": "✅ Ingame-Name gespeichert."})
  
     async def konto(self, request):
         raw = await db.get_setting(GUILD_ID, "konto")
@@ -301,14 +337,17 @@ class Website(commands.Cog):
         ranks = await roles_of(("leader", "officer", "builder_lead", "lender", "member", "recruit"))
         skills = await roles_of(("farmer", "builder", "miner"))
         groups = [{"label": name, "color": color, "members": []} for _, name, color in ranks]
+        igns = {r["discord_id"]: r["mc_name"] for r in await db.fetchall("SELECT discord_id, mc_name FROM players")}
         for m in sorted(guild.members, key=lambda x: x.display_name.lower()):
             if m.bot:
                 continue
             for (role, _, _), group in zip(ranks, groups):
                 if role and role in m.roles:
                     skill = next(({"name": n, "color": c} for r, n, c in skills if r and r in m.roles), None)
-                    group["members"].append({"name": m.display_name, "skill": skill,
-                                             "avatar": m.display_avatar.with_size(64).url})
+                    ign = igns.get(m.id)
+                    group["members"].append({"name": m.display_name, "skill": skill, "ign": ign,
+                                             "status": play_status(m),
+                                             "avatar": f"https://crafthead.net/helm/{ign or 'MHF_Steve'}/64"})
                     break
         return web.json_response(groups)
  
@@ -347,6 +386,8 @@ class Website(commands.Cog):
         member = guild.get_member(int(user["id"])) if guild else None
         if not member:
             return fail("Du bist nicht auf unserem Discord-Server.", 403)
+        if not await get_ign(member.id):
+            return fail("Trage zuerst oben deinen Ingame-Namen ein.", 403)
         role = await get_role(guild, "borrower")
         if role not in member.roles and not await is_staff(member):
             return fail("Dir fehlt die Leiher-Rolle. Hol sie dir im Discord im Kanal #rollen.", 403)
@@ -395,6 +436,8 @@ class Website(commands.Cog):
         exp, why = clean("erfahrung", 800), clean("motivation", 800)
         if not (mc and dc and why):
             return fail("Bitte Minecraft-Name, Discord-Name und Motivation ausfüllen.")
+        if not valid_ign(mc):
+            return fail("Der Minecraft-Name ist ungültig (3–16 Zeichen: Buchstaben, Zahlen, _).")
         guild = self.bot.get_guild(GUILD_ID)
         channel = await get_ch(guild, "team") if guild else None
         if not channel:
