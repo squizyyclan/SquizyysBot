@@ -15,11 +15,11 @@ from discord.ext import commands
 import db
 from cogs.loans import available, loan_embed, loan_view
 from cogs.loans import now as loan_now
-from config import MAX_OPEN_LOANS
+from config import MAX_OPEN_LOANS, ROLE_SPECS
 from utils import get_ch, get_role, is_staff
  
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
-CLAN = html.escape(os.getenv("CLAN_NAME", "Unser Clan"))
+CLAN = html.escape(os.getenv("CLAN_NAME", "Squizyys"))
 ROLES = ("Farmer", "Builder", "Miner", "Egal")
 COLORS = {"pending": 0xF1C40F, "accepted": 0x2ECC71, "declined": 0xE74C3C}
 hits = {}
@@ -126,7 +126,7 @@ class Website(commands.Cog):
                         web.get("/login", self.login), web.get("/callback", self.callback),
                         web.get("/logout", self.logout), web.get("/api/members", self.members),
                         web.get("/api/rules", self.rules), web.get("/api/stats", self.stats),
-                        web.post("/api/leihen", self.borrow)])
+                        web.post("/api/leihen", self.borrow), web.get("/logo.jpg", self.logo)])
         try:
             self.runner = web.AppRunner(app)
             await self.runner.setup()
@@ -138,6 +138,9 @@ class Website(commands.Cog):
     async def cog_unload(self):
         if self.runner:
             await self.runner.cleanup()
+ 
+    async def logo(self, request):
+        return web.FileResponse(os.path.join(os.path.dirname(__file__), "logo.jpg"))
  
     async def index(self, request):
         with open(os.path.join(os.path.dirname(__file__), "page.html"), encoding="utf-8") as f:
@@ -194,17 +197,26 @@ class Website(commands.Cog):
         raise redirect
  
     async def members(self, request):
-        out = {"Clan-Leitung": [], "Offiziere": [], "Verleiher": [], "Mitglieder": []}
         guild = self.bot.get_guild(GUILD_ID)
-        if guild:
-            ranks = [(await get_role(guild, k), label) for k, label in (
-                ("leader", "Clan-Leitung"), ("officer", "Offiziere"), ("lender", "Verleiher"), ("member", "Mitglieder"))]
-            for m in sorted(guild.members, key=lambda x: x.display_name.lower()):
-                for role, label in ranks:
-                    if not m.bot and role and role in m.roles:
-                        out[label].append({"name": m.display_name, "avatar": m.display_avatar.with_size(64).url})
-                        break
-        return web.json_response(out)
+        if not guild:
+            return web.json_response([])
+ 
+        async def roles_of(keys):  # (Discord-Rolle, Name, Farbe) passend zur config.py
+            return [(await get_role(guild, k), ROLE_SPECS[k][0], "#%06x" % ROLE_SPECS[k][1]) for k in keys]
+ 
+        ranks = await roles_of(("leader", "officer", "lender", "member"))
+        skills = await roles_of(("farmer", "builder", "miner"))
+        groups = [{"label": name, "color": color, "members": []} for _, name, color in ranks]
+        for m in sorted(guild.members, key=lambda x: x.display_name.lower()):
+            if m.bot:
+                continue
+            for (role, _, _), group in zip(ranks, groups):
+                if role and role in m.roles:
+                    skill = next(({"name": n, "color": c} for r, n, c in skills if r and r in m.roles), None)
+                    group["members"].append({"name": m.display_name, "skill": skill,
+                                             "avatar": m.display_avatar.with_size(64).url})
+                    break
+        return web.json_response(groups)
  
     async def stats(self, request):
         guild = self.bot.get_guild(GUILD_ID)
