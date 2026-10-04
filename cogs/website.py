@@ -1,13 +1,21 @@
+import base64
+import hashlib
+import hmac
 import html
+import json
 import os
+import secrets
 import time
+from urllib.parse import urlencode
  
 import discord
-from aiohttp import web
+from aiohttp import ClientSession, web
 from discord.ext import commands
  
 import db
-from cogs.loans import available
+from cogs.loans import available, loan_embed, loan_view
+from cogs.loans import now as loan_now
+from config import MAX_OPEN_LOANS
 from utils import get_ch, get_role, is_staff
  
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
@@ -16,50 +24,28 @@ ROLES = ("Farmer", "Builder", "Miner", "Egal")
 COLORS = {"pending": 0xF1C40F, "accepted": 0x2ECC71, "declined": 0xE74C3C}
 hits = {}
  
-PAGE = """<!doctype html><html lang="de"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>__CLAN__</title><style>
-:root{--bg:#14171c;--card:#1f242c;--line:#323a46;--fg:#e8edf2;--mut:#8b96a5;--ok:#4ade80;--bad:#f87171}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
-header{padding:48px 20px;text-align:center;border-bottom:3px solid var(--line)}h1{margin:0;font-size:2.4rem}header p{color:var(--mut);margin:6px 0 0}
-main{max-width:960px;margin:auto;padding:8px 20px 60px}h2{margin-top:40px}
-input,select,textarea,button{font:inherit;color:inherit;background:var(--card);border:2px solid var(--line);padding:10px 12px;width:100%}
-button{background:var(--ok);color:#052e16;font-weight:700;cursor:pointer;border-color:var(--ok)}button:disabled{opacity:.5}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:14px}
-.item{background:var(--card);border:2px solid var(--line);padding:14px}.item b{display:block}.item small{color:var(--mut)}
-.bar{height:8px;background:var(--line);margin:10px 0 6px}.bar i{display:block;height:100%;background:var(--ok)}.out .bar i{background:var(--bad)}
-form{display:grid;gap:12px;margin-top:14px}label{display:grid;gap:4px;color:var(--mut);font-size:.9rem}
-#msg{min-height:1.5em}.hp{position:absolute;left:-9999px}
-</style></head><body>
-<header><h1>⛏️ __CLAN__</h1><p>Leihhaus &amp; Bewerbung</p></header><main>
-<h2>📦 Leihhaus</h2><input id="q" placeholder="Item suchen …"><div id="items" class="grid"></div>
-<h2>📝 Bewerben</h2>
-<form id="f">
-<label>Minecraft-Name<input name="minecraft" maxlength="32" required></label>
-<label>Discord-Name (z. B. max123)<input name="discord" maxlength="40" required></label>
-<label>Wunschrolle<select name="rolle"><option>Farmer</option><option>Builder</option><option>Miner</option><option>Egal</option></select></label>
-<label>Erfahrung<textarea name="erfahrung" rows="3" maxlength="800"></textarea></label>
-<label>Warum möchtest du zu uns?<textarea name="motivation" rows="4" maxlength="800" required></textarea></label>
-<input class="hp" name="website" tabindex="-1" autocomplete="off">
-<button>Bewerbung absenden</button><div id="msg"></div></form></main>
-<script>
-const $=s=>document.querySelector(s);let items=[];
-function draw(){const q=$('#q').value.toLowerCase(),box=$('#items');box.replaceChildren();
-const list=items.filter(i=>i.name.toLowerCase().includes(q));
-if(!list.length){box.textContent='Keine Items gefunden.';return}
-for(const i of list){const d=document.createElement('div');d.className='item'+(i.available>0?'':' out');
-const b=document.createElement('b');b.textContent=i.name;
-const bar=document.createElement('div');bar.className='bar';const p=document.createElement('i');
-p.style.width=(i.stock?100*i.available/i.stock:0)+'%';bar.append(p);
-const s=document.createElement('small');
-s.textContent=(i.available>0?'🟢 ':'🔴 ')+i.available+' / '+i.stock+' verfügbar'+(i.description?' · '+i.description:'');
-d.append(b,bar,s);box.append(d)}}
-async function load(){try{items=await(await fetch('/api/items')).json();draw()}catch(e){}}
-$('#q').oninput=draw;load();setInterval(load,30000);
-$('#f').onsubmit=async e=>{e.preventDefault();const btn=$('#f button'),m=$('#msg');btn.disabled=true;m.textContent='Sende …';
-try{const r=await fetch('/api/bewerbung',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});const j=await r.json();
-m.textContent=j.message;if(r.ok)e.target.reset()}catch(x){m.textContent='Fehler beim Senden.'}btn.disabled=false};
-</script></body></html>""".replace("__CLAN__", CLAN)
+TAG = html.escape(os.getenv("CLAN_TAG", ""))
+TEXT = html.escape(os.getenv("CLAN_TEXT", "Zusammen spielen, zusammen wachsen. Ein Minecraft-Clan mit Leuten, die zusammenhalten."))
+YEAR = html.escape(os.getenv("CLAN_FOUNDED", "2026"))
+CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "")
+CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
+PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")
+SECRET = (os.getenv("SESSION_SECRET") or os.getenv("DISCORD_TOKEN", "x")).encode()
+ 
+ 
+def sign(data):
+    body = base64.urlsafe_b64encode(json.dumps(data).encode()).decode().rstrip("=")
+    return body + "." + hmac.new(SECRET, body.encode(), hashlib.sha256).hexdigest()
+ 
+ 
+def unsign(value):
+    try:
+        body, sig = value.rsplit(".", 1)
+        if hmac.compare_digest(sig, hmac.new(SECRET, body.encode(), hashlib.sha256).hexdigest()):
+            return json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+    except Exception:
+        pass
+    return None
  
  
 def fail(text, status=400):
@@ -136,7 +122,11 @@ class Website(commands.Cog):
         self.bot.add_dynamic_items(AppButton)
         app = web.Application(client_max_size=20_000)
         app.add_routes([web.get("/", self.index), web.get("/api/items", self.items),
-                        web.post("/api/bewerbung", self.apply)])
+                        web.post("/api/bewerbung", self.apply), web.get("/api/me", self.me),
+                        web.get("/login", self.login), web.get("/callback", self.callback),
+                        web.get("/logout", self.logout), web.get("/api/members", self.members),
+                        web.get("/api/rules", self.rules), web.get("/api/stats", self.stats),
+                        web.post("/api/leihen", self.borrow)])
         try:
             self.runner = web.AppRunner(app)
             await self.runner.setup()
@@ -150,13 +140,128 @@ class Website(commands.Cog):
             await self.runner.cleanup()
  
     async def index(self, request):
-        return web.Response(text=PAGE, content_type="text/html")
+        with open(os.path.join(os.path.dirname(__file__), "page.html"), encoding="utf-8") as f:
+            page = f.read()
+        for key, value in (("__NAME__", CLAN), ("__TAG__", TAG), ("__TEXT__", TEXT), ("__YEAR__", YEAR)):
+            page = page.replace(key, value)
+        return web.Response(text=page, content_type="text/html")
  
     async def items(self, request):
         rows = await db.fetchall("SELECT * FROM items WHERE guild_id=? ORDER BY name", (GUILD_ID,))
         return web.json_response([
             {"name": r["name"], "stock": r["stock"], "available": await available(r["id"]),
              "description": r["description"] or ""} for r in rows])
+ 
+    def user(self, request):
+        return unsign(request.cookies.get("s", ""))
+ 
+    async def me(self, request):
+        return web.json_response({"user": self.user(request), "login": bool(CLIENT_ID and CLIENT_SECRET and PUBLIC_URL)})
+ 
+    async def login(self, request):
+        if not (CLIENT_ID and CLIENT_SECRET and PUBLIC_URL):
+            return web.Response(text="Login ist noch nicht eingerichtet.", status=503)
+        state = secrets.token_urlsafe(16)
+        redirect = web.HTTPFound("https://discord.com/oauth2/authorize?" + urlencode({
+            "client_id": CLIENT_ID, "response_type": "code", "scope": "identify",
+            "redirect_uri": PUBLIC_URL + "/callback", "state": state}))
+        redirect.set_cookie("st", state, max_age=600, httponly=True, samesite="Lax")
+        raise redirect
+ 
+    async def callback(self, request):
+        if "code" not in request.query or request.query.get("state") != request.cookies.get("st"):
+            return web.Response(text="Login fehlgeschlagen. Bitte erneut versuchen.", status=400)
+        async with ClientSession() as http:
+            async with http.post("https://discord.com/api/oauth2/token", data={
+                    "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, "grant_type": "authorization_code",
+                    "code": request.query["code"], "redirect_uri": PUBLIC_URL + "/callback"}) as r:
+                token = (await r.json()).get("access_token")
+            if not token:
+                return web.Response(text="Login fehlgeschlagen (Token).", status=400)
+            async with http.get("https://discord.com/api/users/@me", headers={"Authorization": f"Bearer {token}"}) as r:
+                u = await r.json()
+        avatar = f"https://cdn.discordapp.com/avatars/{u['id']}/{u['avatar']}.png?size=64" if u.get("avatar") else ""
+        redirect = web.HTTPFound("/#verleih")
+        redirect.set_cookie("s", sign({"id": u["id"], "username": u["username"], "avatar": avatar,
+                                       "name": u.get("global_name") or u["username"]}),
+                            max_age=604800, httponly=True, samesite="Lax", secure=PUBLIC_URL.startswith("https"))
+        redirect.del_cookie("st")
+        raise redirect
+ 
+    async def logout(self, request):
+        redirect = web.HTTPFound("/")
+        redirect.del_cookie("s")
+        raise redirect
+ 
+    async def members(self, request):
+        out = {"Clan-Leitung": [], "Offiziere": [], "Verleiher": [], "Mitglieder": []}
+        guild = self.bot.get_guild(GUILD_ID)
+        if guild:
+            ranks = [(await get_role(guild, k), label) for k, label in (
+                ("leader", "Clan-Leitung"), ("officer", "Offiziere"), ("lender", "Verleiher"), ("member", "Mitglieder"))]
+            for m in sorted(guild.members, key=lambda x: x.display_name.lower()):
+                for role, label in ranks:
+                    if not m.bot and role and role in m.roles:
+                        out[label].append({"name": m.display_name, "avatar": m.display_avatar.with_size(64).url})
+                        break
+        return web.json_response(out)
+ 
+    async def stats(self, request):
+        guild = self.bot.get_guild(GUILD_ID)
+        role = await get_role(guild, "member") if guild else None
+        return web.json_response({"clan": len(role.members) if role else 0,
+                                  "community": guild.member_count if guild else 0})
+ 
+    async def rules(self, request):
+        text, guild = "", self.bot.get_guild(GUILD_ID)
+        channel, mid = (await get_ch(guild, "rules") if guild else None), await db.get_setting(GUILD_ID, "msg_rules")
+        if channel and mid:
+            try:
+                text = (await channel.fetch_message(int(mid))).embeds[0].description or ""
+            except Exception:
+                pass
+        return web.json_response({"rules": [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("*")]})
+ 
+    async def borrow(self, request):
+        user = self.user(request)
+        if not user:
+            return fail("Bitte melde dich zuerst an.", 401)
+        try:
+            data = await request.json()
+            name, amount, days = str(data["item"]), int(data["menge"]), int(data["tage"])
+        except Exception:
+            return fail("Ungültige Anfrage.")
+        guild = self.bot.get_guild(GUILD_ID)
+        member = guild.get_member(int(user["id"])) if guild else None
+        if not member:
+            return fail("Du bist nicht auf unserem Discord-Server.", 403)
+        role = await get_role(guild, "borrower")
+        if role not in member.roles and not await is_staff(member):
+            return fail("Dir fehlt die Leiher-Rolle. Hol sie dir im Discord im Kanal #rollen.", 403)
+        if not (1 <= amount <= 1000 and 1 <= days <= 60):
+            return fail("Menge oder Tage ungültig.")
+        item = await db.fetchone("SELECT * FROM items WHERE guild_id=? AND name=?", (GUILD_ID, name))
+        if not item:
+            return fail("Item nicht gefunden.", 404)
+        open_n = (await db.fetchone("SELECT COUNT(*) AS n FROM loans WHERE guild_id=? AND user_id=? AND status IN ('pending','active')",
+                                    (GUILD_ID, member.id)))["n"]
+        if open_n >= MAX_OPEN_LOANS:
+            return fail(f"Du hast bereits {open_n} offene Leihen (Maximum {MAX_OPEN_LOANS}).")
+        if await available(item["id"]) < amount:
+            return fail("Davon ist nicht genug verfügbar.")
+        team = await get_ch(guild, "loan_team")
+        if not team:
+            return fail("Das Leihhaus ist gerade nicht erreichbar.", 503)
+        loan_id = await db.execute(
+            "INSERT INTO loans (guild_id, user_id, item_id, amount, days, status, requested_at, note) "
+            "VALUES (?,?,?,?,?,'pending',?,'Über die Website')",
+            (GUILD_ID, member.id, item["id"], amount, days, loan_now().isoformat()))
+        loan = await db.fetchone("SELECT * FROM loans WHERE id=?", (loan_id,))
+        lender = await get_role(guild, "lender")
+        msg = await team.send(content=lender.mention if lender else None, embed=await loan_embed(loan),
+                              view=loan_view(loan_id, "pending"), allowed_mentions=discord.AllowedMentions(roles=True))
+        await db.execute("UPDATE loans SET message_id=? WHERE id=?", (msg.id, loan_id))
+        return web.json_response({"message": f"✅ Anfrage #{loan_id} gesendet! Du bekommst eine DM, sobald sie bearbeitet wurde."})
  
     async def apply(self, request):
         ip = request.headers.get("X-Forwarded-For", request.remote or "").split(",")[0].strip()
