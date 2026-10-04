@@ -14,6 +14,7 @@ load_dotenv()
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
  
 intents = discord.Intents.default()
+intents.presences = os.getenv("PRESENCE_INTENT", "0") == "1"  # Status "spielt Minecraft" (Presence Intent im Developer Portal)
 intents.members = True  # im Developer Portal aktivieren: "Server Members Intent"
  
  
@@ -28,7 +29,7 @@ class ClanBot(commands.Bot):
  
     async def setup_hook(self):
         await db.init()
-        for ext in ("cogs.setup", "cogs.loans", "cogs.voice", "cogs.community"):
+        for ext in ("cogs.ingame", "cogs.setup", "cogs.loans", "cogs.voice", "cogs.community"):
             await self.load_extension(ext)
         try:  # Die Website ist optional: bei einem Fehler läuft der Bot trotzdem weiter
             await self.load_extension("cogs.website")
@@ -77,3 +78,4 @@ if __name__ == "__main__":
     if not token or not GUILD_ID:
         raise SystemExit("DISCORD_TOKEN und GUILD_ID müssen gesetzt sein (siehe .env.example)")
     bot.run(token)
+ 
