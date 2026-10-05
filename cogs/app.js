@@ -37,7 +37,7 @@ $('#f').onsubmit=async e=>{e.preventDefault();const b=$('#f button'),m=$('#msg')
 try{const[ok,j]=await api('/api/bewerbung',post(Object.fromEntries(new FormData(e.target))));m.textContent=j.message;if(ok)e.target.reset()}catch(x){m.textContent='Fehler beim Senden.'}b.disabled=false};
 $('#rf').onsubmit=async e=>{e.preventDefault();const[ok,j]=await api('/api/regeln',post({rules:$('#rt').value}));$('#rm').textContent=j.message;if(ok)setTimeout(()=>location.reload(),900)};
 $('#af').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));f.stock=+f.stock;const[,j]=await api('/api/item',post(f));$('#am').textContent=j.message;load()};
- 
+
 const fmt=v=>v==null?'–':Number(v).toLocaleString('de-DE')+' $';
 async function loadKonto(){const[,k]=await api('/api/konto'),g=$('#kg');g.replaceChildren();
 for(const[l,v]of[['Kontostand',k.balance],['Heute',k.day],['Diese Woche',k.week],['Dieser Monat',k.month]]){
@@ -47,10 +47,10 @@ const f=$('#kf').elements;for(const n of['balance','day','week','month'])if(k[n]
 $('#kf').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));for(const k in f)f[k]=+f[k];
 const[ok,j]=await api('/api/konto',post(f));$('#km').textContent=j.message;if(ok)loadKonto()};
 loadKonto();setInterval(loadKonto,60000);
- 
+
 $('#ig').onsubmit=async e=>{e.preventDefault();const[ok,j]=await api('/api/ign',post({name:e.target.elements['name'].value}));$('#igm').textContent=j.message;if(ok)setTimeout(()=>location.reload(),700)};
 setInterval(async()=>{const[ok,g]=await api('/api/members');if(ok){groups=g;drawMembers(cur)}},60000);
- 
+
 const opsData={},opsSort={};
 function opsTable(k){const box=document.querySelector('#'+k+' .tw'),q=document.querySelector('#'+k+' input').value.toLowerCase();box.replaceChildren();
 let rows=opsData[k];if(!rows)return;
@@ -61,9 +61,9 @@ rows=sets[0]||Object.entries(rows).map(row)}}
 const s=opsSort[k];let l=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(q));
 if(s)l.sort((a,b)=>{const x=a[s.c],y=b[s.c];return(typeof x==='number'&&typeof y==='number'?x-y:String(x??'').localeCompare(String(y??''),'de'))*s.dir});l=l.slice(0,500);
 if(!l.length)return box.append(mk('p','','Keine Einträge.'));
-const cols=[];for(const r of rows.slice(0,50))for(const[c,v]of Object.entries(r))if((typeof v!=='object'||v===null)&&!cols.includes(c)&&cols.length<7)cols.push(c);
+const cols=[];for(const r of rows.slice(0,50))for(const[c,v]of Object.entries(r))if((typeof v!=='object'||v===null)&&!cols.includes(c)&&cols.length<9)cols.push(c);
 const t=mk('table'),h=mk('tr');for(const c of cols){const th=mk('th','',c+(s&&s.c===c?(s.dir>0?' ▲':' ▼'):''));th.style.cursor='pointer';th.onclick=()=>{opsSort[k]={c,dir:s&&s.c===c?-s.dir:1};opsTable(k)};h.append(th)}t.append(h);
-for(const r of l){const tr=mk('tr');for(const c of cols){const v=r[c];tr.append(mk('td','',typeof v==='number'?v.toLocaleString('de-DE'):String(v??'').slice(0,60)))}t.append(tr)}
+for(const r of l){const tr=mk('tr');for(const c of cols){const v=r[c];if(c==='Icon'){const td=mk('td'),im=mk('img');im.src=v||'';im.width=28;im.loading='lazy';td.append(im);tr.append(td)}else tr.append(mk('td','',typeof v==='number'?v.toLocaleString('de-DE'):String(v??'').slice(0,60)))}t.append(tr)}
 box.append(t)}
 async function loadOps(k){const[ok,d]=await api('/api/ops/'+k),box=document.querySelector('#'+k+' .tw');if(!ok){box.textContent=d.message;return}opsData[k]=d;opsTable(k)}
 for(const k of['shards','markt','ah']){document.querySelector('#'+k+' input').oninput=()=>opsTable(k);loadOps(k);setInterval(()=>loadOps(k),60000)}
