@@ -122,12 +122,17 @@ class AppButton(discord.ui.DynamicItem[discord.ui.Button], template=r"app:(?P<ac
         await interaction.followup.send(note, ephemeral=True)
  
  
-# Adressen der OPSUCHT-API (per Variable änderbar, falls sie anders lauten)
+# Mögliche Adressen der OPSUCHT-API (es wird die erste funktionierende benutzt).
+# Mit den Variablen OPS_SHARDS_URL / OPS_MARKT_URL / OPS_AH_URL kannst du eine feste Adresse vorgeben.
 OPS = {
-    "shards": os.getenv("OPS_SHARDS_URL", "https://api.opsucht.net/merchant/rates"),
-    "markt": os.getenv("OPS_MARKT_URL", "https://api.opsucht.net/market/prices"),
-    "ah": os.getenv("OPS_AH_URL", "https://api.opsucht.net/auction/active"),
+    "shards": ["https://api.opsucht.net/merchant/rates", "https://api.opsucht.net/merchant",
+               "https://api.opsucht.net/shards"],
+    "markt": ["https://api.opsucht.net/market/prices", "https://api.opsucht.net/markt/prices"],
+    "ah": ["https://api.opsucht.net/auctions/active"],
 }
+for _key, _env in (("shards", "OPS_SHARDS_URL"), ("markt", "OPS_MARKT_URL"), ("ah", "OPS_AH_URL")):
+    if os.getenv(_env):
+        OPS[_key] = [os.getenv(_env)]
 ops_cache = {}
  
  
@@ -135,12 +140,23 @@ async def ops_json(key):
     stamp, data = ops_cache.get(key, (0, None))
     if data is not None and time.time() - stamp < 60:
         return data
+    errors = []
     async with ClientSession(timeout=ClientTimeout(total=15), headers={"User-Agent": "ClanBot"}) as http:
-        async with http.get(OPS[key]) as r:
-            r.raise_for_status()
-            data = await r.json(content_type=None)
-    ops_cache[key] = (time.time(), data)
-    return data
+        for url in OPS[key]:
+            try:
+                async with http.get(url) as r:
+                    if r.status == 404:
+                        errors.append(f"{url}: 404")
+                        continue
+                    r.raise_for_status()
+                    data = await r.json(content_type=None)
+            except Exception as error:
+                errors.append(f"{url}: {error}")
+                continue
+            ops_cache[key] = (time.time(), data)
+            OPS[key] = [url]  # funktionierende Adresse merken
+            return data
+    raise RuntimeError(" | ".join(errors))
  
  
 def shard_name(source):
@@ -266,13 +282,26 @@ class Website(commands.Cog):
         try:
             data = await ops_json(key)
         except Exception as error:
-            return fail(f"OPSUCHT-Schnittstelle nicht erreichbar ({OPS[key]}): {error}", 502)
+            return fail(f"OPSUCHT-Schnittstelle nicht erreichbar. Versucht: {error}", 502)
         if key == "shards" and isinstance(data, list):
             names = {"opshards": "OP-Shards", "redcoins": "Redcoins"}
             data = [{"Item": shard_name(str(d.get("source", ""))), "Ziel": names.get(d.get("target"), d.get("target")),
                      "Basis": d.get("base"), "Kurs": d.get("exchangeRate"),
                      "Abweichung %": round((d["exchangeRate"] / d["base"] - 1) * 100, 1)
                      if d.get("base") and d.get("exchangeRate") is not None else None} for d in data]
+        if key == "markt" and isinstance(data, dict):
+            rows = []
+            for category, items in data.items():
+                if not isinstance(items, dict):
+                    continue
+                for material, orders in items.items():
+                    side = {o.get("orderSide"): o for o in orders if isinstance(o, dict)} if isinstance(orders, list) else {}
+                    rows.append({"Kategorie": category, "Item": material.replace("_", " ").title(),
+                                 "BUY Preis": side.get("BUY", {}).get("price"),
+                                 "BUY Orders": side.get("BUY", {}).get("activeOrders"),
+                                 "SELL Preis": side.get("SELL", {}).get("price"),
+                                 "SELL Orders": side.get("SELL", {}).get("activeOrders")})
+            data = rows or data
         return web.json_response(data)
  
     async def save_ign(self, request):
