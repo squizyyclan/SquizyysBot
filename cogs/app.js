@@ -1,7 +1,9 @@
 const $=s=>document.querySelector(s),mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const api=async(u,o)=>{const r=await fetch(u,o);return[r.ok,await r.json()]},post=b=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
 let items=[],me=null,groups=[],cur='';
-function route(){const p=location.hash.slice(1)||'home';document.querySelectorAll('main>section').forEach(s=>s.hidden=s.id!==p);document.querySelectorAll('nav a.l').forEach(a=>a.classList.toggle('on',a.dataset.p===p));scrollTo(0,0)}
+let booted=false;const DET={ah:'ahd',markt:'mkd'};
+function route(){const[h,id]=(location.hash.slice(1)||'home').split('/'),p=id&&DET[h]?DET[h]:h;document.querySelectorAll('main>section').forEach(s=>s.hidden=s.id!==p);document.querySelectorAll('nav a.l').forEach(a=>a.classList.toggle('on',a.dataset.p===h));scrollTo(0,0);if(booted)refreshDetail()}
+function refreshDetail(){const[h,id]=location.hash.slice(1).split('/');if(id&&DET[h])(h==='ah'?ahDetail:mkDetail)(decodeURIComponent(id))}
 addEventListener('hashchange',route);route();
 function draw(){const q=$('#q').value.toLowerCase(),box=$('#items');box.replaceChildren();const l=items.filter(i=>i.name.toLowerCase().includes(q));
 if(!l.length)return box.append(mk('p','','Keine Items gefunden.'));
@@ -52,7 +54,7 @@ $('#ig').onsubmit=async e=>{e.preventDefault();const[ok,j]=await api('/api/ign',
 setInterval(async()=>{const[ok,g]=await api('/api/members');if(ok){groups=g;drawMembers(cur)}},60000);
 
 const opsData={},opsSort={},opsCat={};
-function opsTable(k){if(k==='ah')return ahDraw();const box=document.querySelector('#'+k+' .tw'),q=document.querySelector('#'+k+' input').value.toLowerCase();box.replaceChildren();
+function opsTable(k){if(k==='ah')return ahDraw();if(k==='markt'&&Array.isArray(opsData.markt)&&opsData.markt[0]&&opsData.markt[0].material)return mkDraw();const box=document.querySelector('#'+k+' .tw'),q=document.querySelector('#'+k+' input').value.toLowerCase();box.replaceChildren();
 let rows=opsData[k];if(!rows)return;
 if(!Array.isArray(rows)){const row=([n,v])=>typeof v==='object'&&v?{name:n,...v}:{name:n,wert:v},vals=Object.values(rows),objs=vals.filter(v=>v&&typeof v==='object'&&!Array.isArray(v));
 if(objs.length>5&&objs.length>vals.length/2)rows=Object.entries(rows).map(row);
@@ -66,7 +68,7 @@ const cols=[];for(const r of rows.slice(0,50))for(const[c,v]of Object.entries(r)
 const t=mk('table'),h=mk('tr');for(const c of cols){const th=mk('th','',c+(s&&s.c===c?(s.dir>0?' ▲':' ▼'):''));th.style.cursor='pointer';th.onclick=()=>{opsSort[k]={c,dir:s&&s.c===c?-s.dir:1};opsTable(k)};h.append(th)}t.append(h);
 for(const r of l){const tr=mk('tr');for(const c of cols){const v=r[c];if(c==='Icon'){const td=mk('td'),im=mk('img');im.src=v||'';im.width=28;im.loading='lazy';td.append(im);tr.append(td)}else tr.append(mk('td','',typeof v==='number'?v.toLocaleString('de-DE'):String(v??'').slice(0,60)))}t.append(tr)}
 box.append(t)}
-async function loadOps(k){const[ok,d]=await api('/api/ops/'+k),box=document.querySelector('#'+k+' .tw');if(!ok){box.textContent=d.message;return}opsData[k]=d;opsTable(k)}
+async function loadOps(k){const[ok,d]=await api('/api/ops/'+k),box=document.querySelector('#'+k+' .tw');if(!ok){box.textContent=d.message;return}opsData[k]=d;opsTable(k);refreshDetail()}
 for(const k of['shards','markt','ah']){document.querySelector('#'+k+' input').oninput=()=>opsTable(k);loadOps(k);setInterval(()=>loadOps(k),60000)}
 
 function opsChips(k,rows,key){const box=document.querySelector('#'+k+' .chips'),cats={};for(const r of rows)cats[r[key]]=(cats[r[key]]||0)+1;box.replaceChildren();
@@ -83,13 +85,42 @@ l.sort({ende:(a,b)=>a.hours-b.hours,preis:(a,b)=>b.bid-a.bid,sofort:(a,b)=>a.ins
 const g=mk('div','grid');
 for(const a of l.slice(0,120)){const c=mk('div','card auc'),im=mk('img');im.src=a.icon||'';im.loading='lazy';
 c.append(im,mk('b','',a.name),mk('small','',a.amount+'× · '+a.category),mk('small','','Gebot: '+num(a.bid)),mk('small','','Sofort: '+num(a.instant)),mk('small','','⏱ '+rest(a.hours)));
-c.onclick=()=>ahInfo(a);g.append(c)}
+c.onclick=()=>{location.hash='ah/'+encodeURIComponent(a.uid)};g.append(c)}
 box.append(g);if(l.length>120)box.append(mk('p','','… und '+(l.length-120)+' weitere. Nutze Suche oder Filter.'))}
-function ahInfo(a){const d=document.querySelector('#ad');d.replaceChildren();const im=mk('img');im.src=a.icon||'';im.width=56;im.style.cssText='float:right;image-rendering:pixelated';
-d.append(im,mk('h3','',a.name));const kv=mk('div','kv');
-for(const[k,v]of[['Material',a.material],['Menge',a.amount],['Kategorie',a.category],['Startgebot',num(a.start)],['Aktuelles Gebot',num(a.bid)],['Sofortkauf',num(a.instant)],['Gebote',a.bids],['Beginn',when(a.begin)],['Ende',when(a.end)+' ('+rest(a.hours)+')'],['Verkäufer-UUID',a.seller]])kv.append(mk('span','',k),mk('span','',v));
-d.append(kv);
-if((a.lore||[]).some(x=>x))d.append(mk('h4','','Beschreibung'),pre(a.lore.join('\n')));
-const en=Object.entries(a.ench||{});if(en.length)d.append(mk('h4','','Verzauberungen'),pre(en.map(([k,v])=>k+' '+v).join('\n')));
-document.querySelector('#adlg').showModal()}
 document.querySelector('#ah select').onchange=ahDraw;
+
+document.querySelector('#markt select').onchange=()=>mkDraw();
+const names={};
+function who(uuid){const s=mk('span','who'),im=mk('img'),t=mk('span','','…');im.width=20;im.height=20;im.style.cssText='border-radius:4px;margin-right:6px;image-rendering:pixelated';im.onerror=()=>im.remove();s.append(im,t);
+if(!uuid){t.textContent='–';im.remove();return s}
+(names[uuid]??=api('/api/player/'+encodeURIComponent(uuid)).then(([ok,d])=>ok&&d.name?d.name:null).catch(()=>null).then(n=>{if(!n)delete names[uuid];return n})).then(n=>{t.textContent=n||'Unbekannter Spieler';if(n)im.src='https://crafthead.net/helm/'+encodeURIComponent(n)+'/32';else im.remove()});return s}
+const mkIcon=(m,w)=>{const i=mk('img');i.src='https://minecraft-api.vercel.app/images/items/'+m+'.png';i.width=w;i.loading='lazy';i.style.cssText='float:right;image-rendering:pixelated';i.onerror=()=>i.remove();return i};
+const mp=(p,n)=>p>0||n>0?num(p):'–',spr=r=>r.buy>0&&r.sell>0?Math.abs(r.buy-r.sell):null;
+function mkDraw(){const box=document.querySelector('#markt .tw'),rows=opsData.markt;box.replaceChildren();if(!Array.isArray(rows))return;opsChips('markt',rows,'category');
+const q=document.querySelector('#markt input').value.toLowerCase(),cat=opsCat.markt||'',so=document.querySelector('#markt select').value;
+const l=rows.filter(r=>(!cat||r.category===cat)&&(r.name+' '+r.category).toLowerCase().includes(q));
+const rel=r=>spr(r)==null?-1:spr(r)/Math.min(r.buy,r.sell);
+l.sort({name:(a,b)=>a.name.localeCompare(b.name,'de'),buy:(a,b)=>(b.buy||0)-(a.buy||0),sell:(a,b)=>(b.sell||0)-(a.sell||0),spread:(a,b)=>rel(b)-rel(a)}[so]);
+if(!l.length)return box.append(mk('p','','Keine Einträge.'));
+const g=mk('div','grid');for(const r of l.slice(0,120)){const c=mk('div','card auc');c.append(mkIcon(r.material,40),mk('b','',r.name),mk('small','',r.category),mk('small','','BUY: '+mp(r.buy,r.buy_orders)),mk('small','','SELL: '+mp(r.sell,r.sell_orders)));c.onclick=()=>{location.hash='markt/'+encodeURIComponent(r.material)};g.append(c)}
+box.append(g);if(l.length>120)box.append(mk('p','','… und '+(l.length-120)+' weitere. Nutze Suche oder Filter.'))}
+function mkDetail(id){const box=document.querySelector('#mkd .body');box.replaceChildren();const rows=opsData.markt;
+if(!Array.isArray(rows)||!rows[0]||!rows[0].material)return box.append(mk('p','','Lade …'));
+const r=rows.find(x=>x.material===id);if(!r)return box.append(mk('p','','Dieses Item wurde nicht gefunden.'));
+box.append(mkIcon(r.material,72),mk('h2','',r.name),mk('p','',r.category));
+const g=mk('div','grid');
+for(const[l,p,n]of[['BUY-Preis',r.buy,r.buy_orders],['SELL-Preis',r.sell,r.sell_orders]]){const c=mk('div','card'),b=mk('b','',mp(p,n));b.style.cssText='display:block;font-size:1.6rem;color:var(--o)';c.append(mk('small','',l),b,mk('small','',(n??0).toLocaleString('de-DE')+' aktive Orders'));g.append(c)}
+const s=spr(r);if(s!=null){const c=mk('div','card'),b=mk('b','',num(s));b.style.cssText='display:block;font-size:1.6rem;color:var(--o)';c.append(mk('small','','Spanne BUY ↔ SELL'),b,mk('small','',(s/Math.min(r.buy,r.sell)*100).toFixed(1).replace('.',',')+' % Unterschied'));g.append(c)}
+box.append(g)}
+function ahDetail(id){const box=document.querySelector('#ahd .body');box.replaceChildren();const rows=opsData.ah;if(!Array.isArray(rows))return box.append(mk('p','','Lade …'));
+const a=rows.find(x=>String(x.uid)===id);if(!a)return box.append(mk('p','','Diese Auktion ist beendet oder wurde nicht gefunden.'));
+const im=mk('img');im.src=a.icon||'';im.width=72;im.style.cssText='float:right;image-rendering:pixelated';im.onerror=()=>im.remove();
+box.append(im,mk('h2','',a.name),mk('p','',a.amount+'× · '+a.category));
+const kv=mk('div','kv'),row=(k,v)=>kv.append(mk('span','',k),v instanceof Node?v:mk('span','',v));
+row('Material',a.material);row('Menge',a.amount);row('Kategorie',a.category);row('Verkäufer',who(a.seller));row('Startgebot',num(a.start));row('Aktuelles Gebot',num(a.bid));
+if(a.highest)row('Höchstbietender',who(a.highest));row('Sofortkauf',num(a.instant));row('Gebote',a.bids);row('Beginn',when(a.begin));row('Ende',when(a.end)+' ('+rest(a.hours)+')');box.append(kv);
+if((a.bid_list||[]).length){box.append(mk('h4','','Gebote'));const l=mk('div','kv p');for(const b of a.bid_list.slice(0,8))l.append(who(b.uuid),mk('span','',b.amount==null?'–':num(b.amount)));box.append(l)}
+if((a.lore||[]).some(x=>x))box.append(mk('h4','','Beschreibung'),pre(a.lore.join('\n')));
+const en=Object.entries(a.ench||{});if(en.length)box.append(mk('h4','','Verzauberungen'),pre(en.map(([k,v])=>k+' '+v).join('\n')))}
+document.querySelector('#yr').textContent=new Date().getFullYear();
+booted=true;route();
