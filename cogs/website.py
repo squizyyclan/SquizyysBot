@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 
 import discord
 from aiohttp import ClientSession, ClientTimeout, web
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 import db
 from cogs.loans import available, loan_embed, loan_view, refresh_catalog
@@ -34,7 +34,25 @@ YEAR = html.escape(os.getenv("CLAN_FOUNDED", "2026"))
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")
-SECRET = (os.getenv("SESSION_SECRET") or os.getenv("DISCORD_TOKEN", "x")).encode()
+_secret = os.getenv("SESSION_SECRET") or os.getenv("DISCORD_TOKEN")
+if not _secret:
+    raise RuntimeError("SESSION_SECRET (oder DISCORD_TOKEN) muss gesetzt sein.")
+SECRET = _secret.encode()
+
+
+def legal_block():
+    """Anbieter-Angaben für Impressum/Datenschutz. Kommen aus Umgebungsvariablen (nicht im Code/GitHub)."""
+    name, addr, mail, phone = (os.getenv(k, "").strip() for k in
+                               ("IMPRESSUM_NAME", "IMPRESSUM_ADDRESS", "IMPRESSUM_EMAIL", "IMPRESSUM_PHONE"))
+    if not (name and addr and mail):
+        return ('<p style="color:#f1c40f">⚠ Die Anbieter-Angaben fehlen noch. Setze in Railway die Variablen '
+                '<b>IMPRESSUM_NAME</b>, <b>IMPRESSUM_ADDRESS</b> und <b>IMPRESSUM_EMAIL</b>.</p>')
+    lines = [f"<b>{html.escape(name)}</b>"] + [html.escape(x.strip()) for x in re.split(r"[|;\n]", addr) if x.strip()]
+    e = html.escape(mail)
+    lines.append(f'E-Mail: <a href="mailto:{e}">{e}</a>')
+    if phone:
+        lines.append("Telefon: " + html.escape(phone))
+    return "<p>" + "<br>".join(lines) + "</p>"
 
 
 async def leader_of(member):
@@ -191,6 +209,40 @@ def play_status(member):
     return status
 
 
+UUID_RE = re.compile(r"^[0-9a-f]{32}$")
+name_misses = {}  # uuid -> Zeitpunkt des letzten erfolglosen Versuchs
+lookups = []      # Zeitpunkte der letzten Online-Abfragen (globales Limit)
+
+
+async def lookup_name(u):
+    """Spielername zu einer UUID (32 Hex-Zeichen) - Java über Crafthead/Mojang/PlayerDB, Bedrock (Floodgate) über GeyserMC."""
+    async with ClientSession(timeout=ClientTimeout(total=6), headers={"User-Agent": "ClanBot"}) as http:
+        async def get(url):
+            try:
+                async with http.get(url) as r:
+                    if r.status == 200:
+                        return await r.json(content_type=None)
+            except Exception:
+                pass
+            return None
+
+        if u.startswith("0" * 16):  # Floodgate-UUID: hinten steht die Xbox-ID
+            d = await get(f"https://api.geysermc.org/v2/xbox/gamertag/{int(u[16:], 16)}")
+            name = d.get("gamertag") if isinstance(d, dict) else None
+            return str(name)[:40] if name else None
+        for url, pick in ((f"https://crafthead.net/profile/{u}", lambda d: d.get("name")),
+                          (f"https://sessionserver.mojang.com/session/minecraft/profile/{u}", lambda d: d.get("name")),
+                          (f"https://playerdb.co/api/player/minecraft/{u}", lambda d: d["data"]["player"]["username"])):
+            d = await get(url)
+            try:
+                name = pick(d) if isinstance(d, dict) else None
+            except Exception:
+                name = None
+            if name:
+                return str(name)[:40]
+    return None
+
+
 class Website(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -201,6 +253,8 @@ class Website(commands.Cog):
             "CREATE TABLE IF NOT EXISTS applications (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, "
             "minecraft TEXT, discord_name TEXT, role TEXT, experience TEXT, motivation TEXT, status TEXT, "
             "created_at TEXT, message_id INTEGER)")
+        await db.execute("CREATE TABLE IF NOT EXISTS player_names (uuid TEXT PRIMARY KEY, name TEXT, updated REAL)")
+        self.cleanup.start()
         self.bot.add_dynamic_items(AppButton)
         app = web.Application(client_max_size=20_000)
         app.add_routes([web.get("/", self.index), web.get("/api/items", self.items),
@@ -213,7 +267,8 @@ class Website(commands.Cog):
                         web.post("/api/item", self.edit_item),
                         web.get("/api/konto", self.konto), web.post("/api/konto", self.save_konto),
                         web.post("/api/ign", self.save_ign),
-                        web.get("/api/ops/{key}", self.ops)])
+                        web.get("/api/ops/{key}", self.ops),
+                        web.get("/api/player/{uuid}", self.player)])
         try:
             self.runner = web.AppRunner(app)
             await self.runner.setup()
@@ -222,7 +277,13 @@ class Website(commands.Cog):
         except Exception as error:  # Bot soll auch ohne Website weiterlaufen
             print(f"Website konnte nicht gestartet werden: {error}")
 
+    @tasks.loop(hours=24)
+    async def cleanup(self):
+        """Datenschutz: Bewerbungen werden nach 180 Tagen automatisch gelöscht."""
+        await db.execute("DELETE FROM applications WHERE created_at < datetime('now', '-180 days')")
+
     async def cog_unload(self):
+        self.cleanup.cancel()
         if self.runner:
             await self.runner.cleanup()
 
@@ -232,7 +293,9 @@ class Website(commands.Cog):
     async def index(self, request):
         with open(os.path.join(os.path.dirname(__file__), "page.html"), encoding="utf-8") as f:
             page = f.read()
-        for key, value in (("__NAME__", CLAN), ("__TAG__", TAG), ("__TEXT__", TEXT), ("__YEAR__", YEAR)):
+        mail = os.getenv("IMPRESSUM_EMAIL", "").strip()
+        for key, value in (("__IMPRESSUM__", legal_block()), ("__EMAIL__", html.escape(mail) or "(E-Mail-Adresse fehlt)"),
+                           ("__NAME__", CLAN), ("__TAG__", TAG), ("__TEXT__", TEXT), ("__YEAR__", YEAR)):
             page = page.replace(key, value)
         return web.Response(text=page, content_type="text/html")
 
@@ -275,6 +338,27 @@ class Website(commands.Cog):
             title="📜 Clan-Regeln", description=text or "–", colour=discord.Colour.red()))
         return web.json_response({"message": "✅ Regeln gespeichert."})
 
+    async def player(self, request):
+        u = request.match_info["uuid"].replace("-", "").lower()
+        if not UUID_RE.match(u):
+            return fail("Ungültige UUID.")
+        row = await db.fetchone("SELECT name, updated FROM player_names WHERE uuid=?", (u,))
+        now = time.time()
+        if row and row["name"] and now - row["updated"] < 7 * 86400:
+            return web.json_response({"name": row["name"]})
+        old = row["name"] if row else None
+        lookups[:] = [t for t in lookups if now - t < 60]
+        if now - name_misses.get(u, 0) < 600 or len(lookups) >= 40:  # nicht ständig neu fragen
+            return web.json_response({"name": old})
+        lookups.append(now)
+        name = await lookup_name(u)
+        if name:
+            await db.execute("INSERT INTO player_names (uuid, name, updated) VALUES (?,?,?) "
+                             "ON CONFLICT(uuid) DO UPDATE SET name=excluded.name, updated=excluded.updated", (u, name, now))
+        else:
+            name_misses[u] = now
+        return web.json_response({"name": name or old})
+
     async def ops(self, request):
         key = request.match_info["key"]
         if key not in OPS:
@@ -296,11 +380,10 @@ class Website(commands.Cog):
                     continue
                 for material, orders in items.items():
                     side = {o.get("orderSide"): o for o in orders if isinstance(o, dict)} if isinstance(orders, list) else {}
-                    rows.append({"Kategorie": category, "Item": material.replace("_", " ").title(),
-                                 "BUY Preis": side.get("BUY", {}).get("price"),
-                                 "BUY Orders": side.get("BUY", {}).get("activeOrders"),
-                                 "SELL Preis": side.get("SELL", {}).get("price"),
-                                 "SELL Orders": side.get("SELL", {}).get("activeOrders")})
+                    rows.append({"category": category.replace("_", " ").title(), "material": material,
+                                 "name": material.replace("_", " ").title(),
+                                 "buy": side.get("BUY", {}).get("price"), "buy_orders": side.get("BUY", {}).get("activeOrders"),
+                                 "sell": side.get("SELL", {}).get("price"), "sell_orders": side.get("SELL", {}).get("activeOrders")})
             data = rows or data
         if key == "ah" and isinstance(data, list):
             now_utc = dt.datetime.now(dt.timezone.utc)
@@ -313,7 +396,19 @@ class Website(commands.Cog):
                 except Exception:
                     hours = None
                 material = str(item.get("material", "?"))
-                rows.append({
+                raw_bids = a.get("bids") or {}
+                bid_list = []
+                if isinstance(raw_bids, dict):
+                    for who, amount in raw_bids.items():
+                        bid_list.append({"uuid": str(who), "amount": amount if isinstance(amount, (int, float)) else None})
+                    bid_list.sort(key=lambda b: (b["amount"] is not None, b["amount"] or 0), reverse=True)
+                highest = next((a[k] for k in ("highestBidder", "highest_bidder", "currentBidder", "bidder") if a.get(k)), None)
+                if isinstance(highest, dict):
+                    highest = highest.get("uuid") or highest.get("id")
+                if not highest and bid_list and bid_list[0]["amount"] is not None:
+                    highest = bid_list[0]["uuid"]
+                rows.append({"uid": str(a.get("uid") or f"{a.get('seller')}-{a.get('startTime')}"),
+                    "highest": str(highest) if highest else None, "bid_list": bid_list[:10],
                     "name": re.sub("§.", "", str(item.get("displayName") or material.replace("_", " ").title())),
                     "material": material.replace("_", " ").title(), "icon": item.get("icon"), "amount": item.get("amount"),
                     "category": str(a.get("category", "")).replace("sub_", "").replace("_", " ").title(),
@@ -522,7 +617,7 @@ class Website(commands.Cog):
         return web.json_response({"message": f"✅ Anfrage #{loan_id} gesendet! Du bekommst eine DM, sobald sie bearbeitet wurde."})
 
     async def apply(self, request):
-        ip = request.headers.get("X-Forwarded-For", request.remote or "").split(",")[0].strip()
+        ip = request.headers.get("X-Forwarded-For", request.remote or "").split(",")[-1].strip()
         now = time.time()
         hits[ip] = [t for t in hits.get(ip, []) if now - t < 3600]
         if len(hits[ip]) >= 3:
