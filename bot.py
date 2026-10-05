@@ -81,3 +81,4 @@ if __name__ == "__main__":
     if not token or not GUILD_ID:
         raise SystemExit("DISCORD_TOKEN und GUILD_ID müssen gesetzt sein (siehe .env.example)")
     bot.run(token)
+ 
