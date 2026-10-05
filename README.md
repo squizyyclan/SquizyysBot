@@ -58,7 +58,7 @@ Wer den Kanal **➕ Raum erstellen** betritt, bekommt einen eigenen Raum, in den
 
 1. Ordner als **privates** GitHub-Repo pushen (`.env` und `*.db` sind per `.gitignore` ausgeschlossen).
 2. Railway → *New Project* → *Deploy from GitHub repo* → Repo wählen. Der Start läuft über die `Procfile` (`worker: python bot.py`).
-3. Im Service unter *Variables*: `DISCORD_TOKEN`, `GUILD_ID` (deine Server-ID) und `DB_PATH=/data/clanbot.db` setzen.
+3. Im Service unter *Variables*: `DISCORD_TOKEN`, `GUILD_ID` (deine Server-ID), `DB_PATH=/data/clanbot.db` und am besten ein eigenes `SESSION_SECRET` (beliebiger langer Zufallstext für die Website-Logins) setzen.
 4. Im Service *Settings → Volumes* (oder Rechtsklick auf den Service → *Attach Volume*) ein Volume mit Mount-Pfad `/data` anlegen, damit Katalog und Leihen Neustarts überstehen.
 5. Deployen. In den Logs erscheint `Eingeloggt als …`. Jeder Push auf GitHub deployt automatisch neu.
 
@@ -67,3 +67,14 @@ Wer den Kanal **➕ Raum erstellen** betritt, bekommt einen eigenen Raum, in den
 
 Der Bot läuft ausschließlich auf dem Server aus `GUILD_ID`: Slash-Commands werden nur dort registriert, Befehle von anderen Servern werden abgelehnt, und der Bot verlässt fremde Server automatisch.
 Die Server-ID bekommst du so: Discord → Einstellungen → Erweitert → *Entwicklermodus* an → Rechtsklick auf den Server → *Server-ID kopieren*.
+
+
+## Website: OPSUCHT-Bereiche
+
+- **AH** und **Markt** zeigen Karten; ein Klick öffnet eine eigene Seite (`#ah/<id>`, `#markt/<item>`), die auch per Link teilbar ist.
+- Spieler (Verkäufer, Bieter) werden als **Name** angezeigt. Die UUID wird serverseitig über Crafthead/Mojang/PlayerDB (Java) bzw. GeyserMC (Bedrock) aufgelöst und in der Tabelle `player_names` zwischengespeichert.
+- Unter jedem OPSUCHT-Bereich steht ein Credit-Hinweis, ganz unten ein Footer mit Disclaimer.
+
+## Impressum & Datenschutz
+
+Die Website enthält ein Impressum (`#impressum`) und eine Datenschutzerklärung (`#datenschutz`), verlinkt im Footer. Deine Angaben kommen aus Railway-Variablen (nicht aus dem Code): `IMPRESSUM_NAME`, `IMPRESSUM_ADDRESS` (Zeilen mit `|` trennen), `IMPRESSUM_EMAIL`, optional `IMPRESSUM_PHONE`. Fehlen sie, zeigt die Seite eine Warnung. Bewerbungen werden nach 180 Tagen automatisch gelöscht.
