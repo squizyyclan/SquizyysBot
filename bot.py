@@ -20,7 +20,10 @@ intents.members = True  # im Developer Portal aktivieren: "Server Members Intent
  
 class GuildOnlyTree(app_commands.CommandTree):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return interaction.guild_id == GUILD_ID
+        if interaction.guild_id == GUILD_ID:
+            return True
+        await interaction.response.send_message("Dieser Bot läuft nur auf dem Clan-Server.", ephemeral=True)
+        return False
  
  
 class ClanBot(commands.Bot):
@@ -78,4 +81,3 @@ if __name__ == "__main__":
     if not token or not GUILD_ID:
         raise SystemExit("DISCORD_TOKEN und GUILD_ID müssen gesetzt sein (siehe .env.example)")
     bot.run(token)
- 
