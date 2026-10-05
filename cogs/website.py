@@ -312,12 +312,17 @@ class Website(commands.Cog):
                     hours = round((end - now_utc).total_seconds() / 3600, 1)
                 except Exception:
                     hours = None
-                name = re.sub("§.", "", str(item.get("displayName") or str(item.get("material", "?")).replace("_", " ").title()))
-                rows.append({"Icon": item.get("icon"), "Item": name, "Menge": item.get("amount"),
-                             "Kategorie": str(a.get("category", "")).replace("sub_", "").replace("_", " ").title(),
-                             "Startgebot": a.get("startBid"), "Aktuelles Gebot": a.get("currentBid"),
-                             "Sofortkauf": a.get("instantBuyPrice"), "Gebote": len(a.get("bids") or {}),
-                             "Endet in (Std)": hours})
+                material = str(item.get("material", "?"))
+                rows.append({
+                    "name": re.sub("§.", "", str(item.get("displayName") or material.replace("_", " ").title())),
+                    "material": material.replace("_", " ").title(), "icon": item.get("icon"), "amount": item.get("amount"),
+                    "category": str(a.get("category", "")).replace("sub_", "").replace("_", " ").title(),
+                    "start": a.get("startBid"), "bid": a.get("currentBid"), "instant": a.get("instantBuyPrice"),
+                    "bids": len(a.get("bids") or {}), "hours": hours, "begin": a.get("startTime"), "end": a.get("endTime"),
+                    "lore": [re.sub("§.", "", str(x)) for x in item.get("lore") or []],
+                    "ench": {str(k).replace("minecraft:", "").replace("_", " ").title(): v
+                             for k, v in (item.get("enchantments") or {}).items()},
+                    "seller": a.get("seller")})
             data = rows
         return web.json_response(data)
 
