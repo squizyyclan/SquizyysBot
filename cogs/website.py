@@ -8,12 +8,12 @@ import os
 import re
 import secrets
 import time
+from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
 
 import discord
-from discord import app_commands
 from aiohttp import ClientSession, ClientTimeout, web
-from discord.ext import commands, tasks
+from discord.ext import commands
 
 import db
 from cogs.loans import available, loan_embed, loan_view, refresh_catalog
@@ -35,27 +35,7 @@ YEAR = html.escape(os.getenv("CLAN_FOUNDED", "2026"))
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")
-APP_URL = os.getenv("APP_DOWNLOAD_URL", "").strip()  # Download-Link der Windows-App (optional)
-APP_URL = APP_URL if APP_URL.startswith("https://") else ""
-_secret = os.getenv("SESSION_SECRET") or os.getenv("DISCORD_TOKEN")
-if not _secret:
-    raise RuntimeError("SESSION_SECRET (oder DISCORD_TOKEN) muss gesetzt sein.")
-SECRET = _secret.encode()
-
-
-def legal_block():
-    """Anbieter-Angaben für Impressum/Datenschutz. Kommen aus Umgebungsvariablen (nicht im Code/GitHub)."""
-    name, addr, mail, phone = (os.getenv(k, "").strip() for k in
-                               ("IMPRESSUM_NAME", "IMPRESSUM_ADDRESS", "IMPRESSUM_EMAIL", "IMPRESSUM_PHONE"))
-    if not (name and addr and mail):
-        return ('<p style="color:#f1c40f">⚠ Die Anbieter-Angaben fehlen noch. Setze in Railway die Variablen '
-                '<b>IMPRESSUM_NAME</b>, <b>IMPRESSUM_ADDRESS</b> und <b>IMPRESSUM_EMAIL</b>.</p>')
-    lines = [f"<b>{html.escape(name)}</b>"] + [html.escape(x.strip()) for x in re.split(r"[|;\n]", addr) if x.strip()]
-    e = html.escape(mail)
-    lines.append(f'E-Mail: <a href="mailto:{e}">{e}</a>')
-    if phone:
-        lines.append("Telefon: " + html.escape(phone))
-    return "<p>" + "<br>".join(lines) + "</p>"
+SECRET = (os.getenv("SESSION_SECRET") or os.getenv("DISCORD_TOKEN", "x")).encode()
 
 
 async def leader_of(member):
@@ -193,6 +173,26 @@ def shard_name(source):
     return name
 
 
+async def konto_summary():
+    """Gewinn heute / Woche / Monat wird aus den gespeicherten Kontoständen berechnet."""
+    rows = await db.fetchall("SELECT ts, balance, by FROM konto_log ORDER BY ts")
+    if not rows:
+        return {}
+    try:
+        zone = ZoneInfo("Europe/Berlin")
+    except Exception:
+        zone = dt.timezone.utc
+    now = dt.datetime.now(zone)
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    starts = {"day": day, "week": day - dt.timedelta(days=now.weekday()), "month": day.replace(day=1)}
+    last = rows[-1]
+    out = {"balance": last["balance"], "updated": last["ts"], "by": last["by"]}
+    for key, start in starts.items():
+        before = [r for r in rows if dt.datetime.fromisoformat(r["ts"]) < start]
+        out[key] = last["balance"] - (before[-1] if before else rows[0])["balance"]
+    return out
+
+
 def play_status(member):
     """Best-Effort über Discord-Aktivitäten (OPSUCHT selbst bietet keine öffentliche Online-Abfrage)."""
     if not PRESENCE:
@@ -212,40 +212,6 @@ def play_status(member):
     return status
 
 
-UUID_RE = re.compile(r"^[0-9a-f]{32}$")
-name_misses = {}  # uuid -> Zeitpunkt des letzten erfolglosen Versuchs
-lookups = []      # Zeitpunkte der letzten Online-Abfragen (globales Limit)
-
-
-async def lookup_name(u):
-    """Spielername zu einer UUID (32 Hex-Zeichen) - Java über Crafthead/Mojang/PlayerDB, Bedrock (Floodgate) über GeyserMC."""
-    async with ClientSession(timeout=ClientTimeout(total=6), headers={"User-Agent": "ClanBot"}) as http:
-        async def get(url):
-            try:
-                async with http.get(url) as r:
-                    if r.status == 200:
-                        return await r.json(content_type=None)
-            except Exception:
-                pass
-            return None
-
-        if u.startswith("0" * 16):  # Floodgate-UUID: hinten steht die Xbox-ID
-            d = await get(f"https://api.geysermc.org/v2/xbox/gamertag/{int(u[16:], 16)}")
-            name = d.get("gamertag") if isinstance(d, dict) else None
-            return str(name)[:40] if name else None
-        for url, pick in ((f"https://crafthead.net/profile/{u}", lambda d: d.get("name")),
-                          (f"https://sessionserver.mojang.com/session/minecraft/profile/{u}", lambda d: d.get("name")),
-                          (f"https://playerdb.co/api/player/minecraft/{u}", lambda d: d["data"]["player"]["username"])):
-            d = await get(url)
-            try:
-                name = pick(d) if isinstance(d, dict) else None
-            except Exception:
-                name = None
-            if name:
-                return str(name)[:40]
-    return None
-
-
 class Website(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -256,8 +222,8 @@ class Website(commands.Cog):
             "CREATE TABLE IF NOT EXISTS applications (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, "
             "minecraft TEXT, discord_name TEXT, role TEXT, experience TEXT, motivation TEXT, status TEXT, "
             "created_at TEXT, message_id INTEGER)")
-        await db.execute("CREATE TABLE IF NOT EXISTS player_names (uuid TEXT PRIMARY KEY, name TEXT, updated REAL)")
-        self.cleanup.start()
+        await db.execute("CREATE TABLE IF NOT EXISTS konto_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, balance INTEGER, by TEXT)")
+        await db.execute("CREATE TABLE IF NOT EXISTS wallet (discord_id INTEGER PRIMARY KEY, money INTEGER, updated TEXT)")
         self.bot.add_dynamic_items(AppButton)
         app = web.Application(client_max_size=20_000)
         app.add_routes([web.get("/", self.index), web.get("/api/items", self.items),
@@ -271,7 +237,8 @@ class Website(commands.Cog):
                         web.get("/api/konto", self.konto), web.post("/api/konto", self.save_konto),
                         web.post("/api/ign", self.save_ign),
                         web.get("/api/ops/{key}", self.ops),
-                        web.get("/api/player/{uuid}", self.player)])
+                        web.post("/api/konto/push", self.push_konto), web.post("/api/wallet", self.save_wallet),
+                        web.get("/api/leaderboard", self.leaderboard)])
         try:
             self.runner = web.AppRunner(app)
             await self.runner.setup()
@@ -280,33 +247,9 @@ class Website(commands.Cog):
         except Exception as error:  # Bot soll auch ohne Website weiterlaufen
             print(f"Website konnte nicht gestartet werden: {error}")
 
-    @tasks.loop(hours=24)
-    async def cleanup(self):
-        """Datenschutz: Bewerbungen werden nach 180 Tagen automatisch gelöscht."""
-        await db.execute("DELETE FROM applications WHERE created_at < datetime('now', '-180 days')")
-
     async def cog_unload(self):
-        self.cleanup.cancel()
         if self.runner:
             await self.runner.cleanup()
-
-    @app_commands.command(name="website", description="Zeigt den Link zur Clan-Website und zur Desktop-App")
-    @app_commands.guild_only()
-    async def website(self, interaction: discord.Interaction):
-        if not PUBLIC_URL:
-            return await interaction.response.send_message(
-                "Die Website-Adresse ist noch nicht eingestellt (Variable PUBLIC_URL fehlt).", ephemeral=True)
-        embed = discord.Embed(
-            title=f"🌐 {os.getenv('CLAN_NAME', 'Squizyys')} – Website", colour=discord.Colour.purple(),
-            description="Hier findest du Verleih, Markt, Auktionshaus, Shard-Kurse, Mitglieder und die Bewerbung.")
-        if APP_URL:
-            embed.add_field(name="💻 Desktop-App", value="Die Website gibt es auch als Windows-App (.exe).", inline=False)
-        view = discord.ui.View()
-        for label, path in (("Website", ""), ("Verleih", "/#verleih"), ("Markt", "/#markt"), ("Bewerben", "/#bewerben")):
-            view.add_item(discord.ui.Button(label=label, url=PUBLIC_URL + path))
-        if APP_URL:
-            view.add_item(discord.ui.Button(label="App herunterladen", emoji="💻", url=APP_URL))
-        await interaction.response.send_message(embed=embed, view=view)
 
     async def logo(self, request):
         return web.FileResponse(os.path.join(os.path.dirname(__file__), "logo.jpg"))
@@ -314,14 +257,21 @@ class Website(commands.Cog):
     async def index(self, request):
         with open(os.path.join(os.path.dirname(__file__), "page.html"), encoding="utf-8") as f:
             page = f.read()
-        mail = os.getenv("IMPRESSUM_EMAIL", "").strip()
-        for key, value in (("__IMPRESSUM__", legal_block()), ("__EMAIL__", html.escape(mail) or "(E-Mail-Adresse fehlt)"),
-                           ("__APPLINK__", f'<a href="{html.escape(APP_URL)}">Desktop-App</a>' if APP_URL else ""),
-                           ("__NAME__", CLAN), ("__TAG__", TAG), ("__TEXT__", TEXT), ("__YEAR__", YEAR)):
+        for key, value in (("__NAME__", CLAN), ("__TAG__", TAG), ("__TEXT__", TEXT), ("__YEAR__", YEAR)):
             page = page.replace(key, value)
         return web.Response(text=page, content_type="text/html")
 
+    async def can_loan(self, member):
+        """Verleih sehen darf nur, wer die Leiher-Rolle hat (oder zum Team gehört)."""
+        if not member:
+            return False
+        role = await get_role(member.guild, "borrower")
+        return bool((role and role in member.roles) or await is_staff(member))
+
     async def items(self, request):
+        _, member = await self.member_of(request)
+        if not await self.can_loan(member):
+            return fail("Der Verleih ist nur für Mitglieder mit der Leiher-Rolle sichtbar.", 403)
         rows = await db.fetchall("SELECT * FROM items WHERE guild_id=? ORDER BY name", (GUILD_ID,))
         return web.json_response([
             {"name": r["name"], "stock": r["stock"], "available": await available(r["id"]),
@@ -342,6 +292,7 @@ class Website(commands.Cog):
         return web.json_response({
             "user": self.user(request), "login": bool(CLIENT_ID and CLIENT_SECRET and PUBLIC_URL),
             "leader": bool(member and await leader_of(member)), "staff": bool(member and await is_staff(member)),
+            "loan": await self.can_loan(member),
             "ign": await get_ign(member.id) if member else None})
 
     async def save_rules(self, request):
@@ -359,27 +310,6 @@ class Website(commands.Cog):
         await ensure_message(guild, channel, "rules", discord.Embed(
             title="📜 Clan-Regeln", description=text or "–", colour=discord.Colour.red()))
         return web.json_response({"message": "✅ Regeln gespeichert."})
-
-    async def player(self, request):
-        u = request.match_info["uuid"].replace("-", "").lower()
-        if not UUID_RE.match(u):
-            return fail("Ungültige UUID.")
-        row = await db.fetchone("SELECT name, updated FROM player_names WHERE uuid=?", (u,))
-        now = time.time()
-        if row and row["name"] and now - row["updated"] < 7 * 86400:
-            return web.json_response({"name": row["name"]})
-        old = row["name"] if row else None
-        lookups[:] = [t for t in lookups if now - t < 60]
-        if now - name_misses.get(u, 0) < 600 or len(lookups) >= 40:  # nicht ständig neu fragen
-            return web.json_response({"name": old})
-        lookups.append(now)
-        name = await lookup_name(u)
-        if name:
-            await db.execute("INSERT INTO player_names (uuid, name, updated) VALUES (?,?,?) "
-                             "ON CONFLICT(uuid) DO UPDATE SET name=excluded.name, updated=excluded.updated", (u, name, now))
-        else:
-            name_misses[u] = now
-        return web.json_response({"name": name or old})
 
     async def ops(self, request):
         key = request.match_info["key"]
@@ -402,10 +332,11 @@ class Website(commands.Cog):
                     continue
                 for material, orders in items.items():
                     side = {o.get("orderSide"): o for o in orders if isinstance(o, dict)} if isinstance(orders, list) else {}
-                    rows.append({"category": category.replace("_", " ").title(), "material": material,
-                                 "name": material.replace("_", " ").title(),
-                                 "buy": side.get("BUY", {}).get("price"), "buy_orders": side.get("BUY", {}).get("activeOrders"),
-                                 "sell": side.get("SELL", {}).get("price"), "sell_orders": side.get("SELL", {}).get("activeOrders")})
+                    rows.append({"Kategorie": category, "Item": material.replace("_", " ").title(),
+                                 "BUY Preis": side.get("BUY", {}).get("price"),
+                                 "BUY Orders": side.get("BUY", {}).get("activeOrders"),
+                                 "SELL Preis": side.get("SELL", {}).get("price"),
+                                 "SELL Orders": side.get("SELL", {}).get("activeOrders")})
             data = rows or data
         if key == "ah" and isinstance(data, list):
             now_utc = dt.datetime.now(dt.timezone.utc)
@@ -418,19 +349,7 @@ class Website(commands.Cog):
                 except Exception:
                     hours = None
                 material = str(item.get("material", "?"))
-                raw_bids = a.get("bids") or {}
-                bid_list = []
-                if isinstance(raw_bids, dict):
-                    for who, amount in raw_bids.items():
-                        bid_list.append({"uuid": str(who), "amount": amount if isinstance(amount, (int, float)) else None})
-                    bid_list.sort(key=lambda b: (b["amount"] is not None, b["amount"] or 0), reverse=True)
-                highest = next((a[k] for k in ("highestBidder", "highest_bidder", "currentBidder", "bidder") if a.get(k)), None)
-                if isinstance(highest, dict):
-                    highest = highest.get("uuid") or highest.get("id")
-                if not highest and bid_list and bid_list[0]["amount"] is not None:
-                    highest = bid_list[0]["uuid"]
-                rows.append({"uid": str(a.get("uid") or f"{a.get('seller')}-{a.get('startTime')}"),
-                    "highest": str(highest) if highest else None, "bid_list": bid_list[:10],
+                rows.append({
                     "name": re.sub("§.", "", str(item.get("displayName") or material.replace("_", " ").title())),
                     "material": material.replace("_", " ").title(), "icon": item.get("icon"), "amount": item.get("amount"),
                     "category": str(a.get("category", "")).replace("sub_", "").replace("_", " ").title(),
@@ -457,23 +376,72 @@ class Website(commands.Cog):
         return web.json_response({"message": "✅ Ingame-Name gespeichert."})
 
     async def konto(self, request):
-        raw = await db.get_setting(GUILD_ID, "konto")
-        return web.json_response(json.loads(raw) if raw else {})
+        return web.json_response(await konto_summary())
+
+    async def add_balance(self, balance, by):
+        await db.execute("INSERT INTO konto_log (ts, balance, by) VALUES (?,?,?)",
+                         (dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), balance, by))
 
     async def save_konto(self, request):
         guild, member = await self.member_of(request)
         if not member or not await leader_of(member):
             return fail("Nur die Clan-Leitung darf das Konto ändern.", 403)
         try:
-            d = await request.json()
-            values = {k: int(d[k]) for k in ("balance", "day", "week", "month")}
+            balance = int((await request.json())["balance"])
         except Exception:
-            return fail("Bitte alle vier Zahlen ausfüllen.")
-        if any(abs(v) > 10**15 for v in values.values()):
-            return fail("Eine Zahl ist zu groß.")
-        values.update(updated=dt.datetime.now(dt.timezone.utc).isoformat(), by=member.display_name)
-        await db.set_setting(GUILD_ID, "konto", json.dumps(values))
-        return web.json_response({"message": "✅ Clan-Konto gespeichert."})
+            return fail("Bitte den Kontostand als Zahl eingeben.")
+        if abs(balance) > 10**15:
+            return fail("Die Zahl ist zu groß.")
+        await self.add_balance(balance, member.display_name)
+        return web.json_response({"message": "✅ Kontostand gespeichert. Gewinn wird automatisch berechnet."})
+
+    async def push_konto(self, request):
+        """Für automatische Aktualisierung durch ein eigenes Tool: Authorization: Bearer <KONTO_TOKEN>."""
+        token = os.getenv("KONTO_TOKEN", "")
+        sent = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        if not token or not hmac.compare_digest(sent, token):
+            return fail("Nicht erlaubt.", 403)
+        try:
+            balance = int((await request.json())["balance"])
+        except Exception:
+            return fail("Ungültige Anfrage.")
+        await self.add_balance(balance, "Automatisch")
+        return web.json_response({"message": "ok"})
+
+    async def save_wallet(self, request):
+        guild, member = await self.member_of(request)
+        if not member:
+            return fail("Bitte melde dich an.", 401)
+        if not await get_ign(member.id):
+            return fail("Trage zuerst deinen Ingame-Namen ein.", 403)
+        try:
+            money = int((await request.json())["money"])
+        except Exception:
+            return fail("Bitte eine Zahl eingeben.")
+        if not 0 <= money <= 10**15:
+            return fail("Ungültiger Betrag.")
+        await db.execute("INSERT INTO wallet (discord_id, money, updated) VALUES (?,?,?) ON CONFLICT(discord_id) "
+                         "DO UPDATE SET money=excluded.money, updated=excluded.updated",
+                         (member.id, money, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")))
+        return web.json_response({"message": "✅ Gespeichert."})
+
+    async def leaderboard(self, request):
+        guild = self.bot.get_guild(GUILD_ID)
+        if not guild:
+            return web.json_response([])
+        clan_roles = [r for r in [await get_role(guild, k) for k in ("leader", "officer", "builder_lead", "member", "recruit")] if r]
+        igns = {r["discord_id"]: r["mc_name"] for r in await db.fetchall("SELECT discord_id, mc_name FROM players")}
+        out = []
+        for row in await db.fetchall("SELECT discord_id, money, updated FROM wallet ORDER BY money DESC"):
+            m = guild.get_member(row["discord_id"])
+            if not m or not any(r in m.roles for r in clan_roles):
+                continue
+            ign = igns.get(m.id)
+            out.append({"name": m.display_name, "ign": ign, "money": row["money"], "updated": row["updated"],
+                        "avatar": f"https://crafthead.net/helm/{ign or 'MHF_Steve'}/64"})
+            if len(out) >= 20:
+                break
+        return web.json_response(out)
 
     async def edit_item(self, request):
         guild, member = await self.member_of(request)
@@ -639,7 +607,7 @@ class Website(commands.Cog):
         return web.json_response({"message": f"✅ Anfrage #{loan_id} gesendet! Du bekommst eine DM, sobald sie bearbeitet wurde."})
 
     async def apply(self, request):
-        ip = request.headers.get("X-Forwarded-For", request.remote or "").split(",")[-1].strip()
+        ip = request.headers.get("X-Forwarded-For", request.remote or "").split(",")[0].strip()
         now = time.time()
         hits[ip] = [t for t in hits.get(ip, []) if now - t < 3600]
         if len(hits[ip]) >= 3:
